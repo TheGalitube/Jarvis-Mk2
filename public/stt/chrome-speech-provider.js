@@ -21,6 +21,7 @@ export class ChromeSpeechProvider {
     this.finalText = "";
     this.listening = false;
     this.discardFinal = false;
+    this.stopWaiters = [];
   }
 
   get supported() { return typeof this.Recognition === "function"; }
@@ -45,10 +46,15 @@ export class ChromeSpeechProvider {
   }
 
   stop() {
-    if (!this.active && !this.listening) return false;
+    if (!this.active && !this.listening) return Promise.resolve(false);
     this.active = false;
-    try { this.recognition?.stop(); } catch { /* already stopped */ }
-    return true;
+    // `SpeechRecognition.stop()` is asynchronous. A new `start()` before its
+    // `onend` causes Chrome's InvalidStateError, so callers that hand capture
+    // from wake listening to Push-to-Talk can await this lifecycle boundary.
+    const stopped = new Promise((resolve) => this.stopWaiters.push(resolve));
+    try { this.recognition?.stop(); }
+    catch { this.#settleStops(false); }
+    return stopped;
   }
 
   #recognizer() {
@@ -95,8 +101,13 @@ export class ChromeSpeechProvider {
       this.finalText = "";
       this.discardFinal = false;
       emit(this.onEvent, { type: "stt.final", provider: "chrome", text, discarded });
+      this.#settleStops(true);
     };
     this.recognition = recognition;
     return recognition;
+  }
+
+  #settleStops(value) {
+    for (const resolve of this.stopWaiters.splice(0)) resolve(value);
   }
 }

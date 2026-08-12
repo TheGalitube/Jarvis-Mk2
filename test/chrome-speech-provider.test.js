@@ -37,6 +37,22 @@ test("resumes recoverable recognition endings while the microphone remains activ
   assert.equal(events.at(-1).type, "stt.resumed");
 });
 
+test("stop resolves only after Chrome has ended the active recognition session", async () => {
+  class DelayedRecognition extends FakeRecognition {
+    stop() { this.stops++; }
+  }
+  const provider = new ChromeSpeechProvider({ Recognition: DelayedRecognition });
+  provider.start();
+  const recognition = DelayedRecognition.latest;
+  let settled = false;
+  const stopped = provider.stop().then(() => { settled = true; });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(settled, false);
+  recognition.end();
+  await stopped;
+  assert.equal(settled, true);
+});
+
 test("fatal browser errors discard a partial transcript and stop the provider", () => {
   const events = [];
   const provider = new ChromeSpeechProvider({ Recognition: FakeRecognition, onEvent: (event) => events.push(event) });

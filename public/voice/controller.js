@@ -41,7 +41,7 @@ export class VoiceController {
     } else if (this.waitingForSelection) {
       this.waitingForSelection = false;
       this.sendTransport?.({ type: "stt.cancel" });
-    } else this.chrome.stop();
+    } else await this.chrome.stop();
     return true;
   }
 

@@ -52,6 +52,25 @@ test("voice activation emits a wake event and Push-to-Talk takes precedence", ()
   assert.ok(calls.includes("chrome.stop"));
 });
 
+test("waits for activation recognition to end before starting Push-to-Talk", async () => {
+  const calls = [];
+  let releaseStop;
+  const chrome = {
+    supported: true,
+    setLanguage: () => {},
+    start: () => { calls.push("start"); return true; },
+    stop: () => { calls.push("stop"); return new Promise((resolve) => { releaseStop = resolve; }); },
+  };
+  const voice = new VoiceController({ chrome, microphone: { stop: async () => {} } });
+  voice.configure({ voice: { mode: "voice-activation", wakeWords: ["jarvis"], silenceTimeoutMs: 100 }, stt: { provider: "chrome", chrome: { language: "en-US" } } });
+  voice.arm();
+  voice.start();
+  assert.deepEqual(calls, ["start", "stop"]);
+  releaseStop(true);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(calls, ["start", "stop", "start"]);
+});
+
 test("voice activation dispatches one command after its silence timeout", async () => {
   const timers = [];
   const { voice, events, chrome } = controller(
