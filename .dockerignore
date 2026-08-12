@@ -1,0 +1,9 @@
+.git
+.codex
+node_modules
+builds
+.env
+*.log
+.DS_Store
+.gstack
+.worktrees

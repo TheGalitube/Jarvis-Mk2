@@ -1,0 +1,17 @@
+services:
+  jarvis:
+    build: .
+    init: true
+    ports:
+      - "127.0.0.1:3210:3210"
+    environment:
+      JARVIS_CONFIG_FILE: /app/data/runtime-config.json
+      # Set only if the browser reaches Jarvis through a trusted reverse proxy.
+      # JARVIS_ALLOWED_HOSTS: jarvis.example.ts.net
+    volumes:
+      - ./data:/app/data
+      # Codex authentication is supplied by the operator, never baked into image.
+      - ${JARVIS_CODEX_HOME:-./.docker/codex}:/home/node/.codex
+      # Optional SSH known_hosts/config/keys. Keep it read-only.
+      - ${JARVIS_SSH_HOME:-./.docker/ssh}:/home/node/.ssh:ro
+    restart: unless-stopped

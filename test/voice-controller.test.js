@@ -1,0 +1,74 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { float32ToPcm16Base64 } from "../public/voice/microphone.js";
+import { VoiceController } from "../public/voice/controller.js";
+import { VoiceStateMachine } from "../public/voice/state-machine.js";
+
+test("converts float microphone frames to signed little-endian PCM16", () => {
+  assert.equal(float32ToPcm16Base64(new Float32Array([-1, 0, 1])), "AIAAAP9/");
+});
+
+function controller(config, options = {}) {
+  const sent = [], events = [], calls = [];
+  const chrome = { supported: true, start: () => { calls.push("chrome.start"); return true; }, stop: () => { calls.push("chrome.stop"); }, setLanguage: (language) => calls.push(`language:${language}`) };
+  const microphone = { start: async (onAudio) => { calls.push("mic.start"); microphone.onAudio = onAudio; }, stop: async () => calls.push("mic.stop") };
+  const voice = new VoiceController({ chrome, microphone, sendTransport: (message) => sent.push(message), onEvent: (event) => events.push(event), ...options });
+  voice.configure(config);
+  return { voice, sent, events, calls, microphone, chrome };
+}
+
+test("keeps Chrome Push-to-Talk as the default provider", () => {
+  const { voice, calls } = controller({ stt: { provider: "chrome", chrome: { language: "en-US" } } });
+  voice.start(); voice.stop();
+  assert.deepEqual(calls, ["language:en-US", "chrome.start", "chrome.stop"]);
+});
+
+test("streams PCM only after server selects configured Nemotron", async () => {
+  const { voice, sent, calls, microphone } = controller({ stt: { provider: "auto", nemotron: { configured: true }, chrome: { language: "de-DE" }, fallbackToChrome: true } });
+  voice.start();
+  assert.deepEqual(sent, [{ type: "stt.start" }]);
+  await voice.handleTransport({ type: "stt.selected", provider: "nemotron" });
+  microphone.onAudio("AAE=");
+  await voice.stop();
+  assert.deepEqual(calls, ["language:de-DE", "mic.start", "mic.stop"]);
+  assert.deepEqual(sent.slice(1), [{ type: "stt.audio", audio: "AAE=" }, { type: "stt.stop" }]);
+});
+
+test("switches to Chrome when the server selects fallback or Nemotron fails", async () => {
+  const { voice, calls } = controller({ stt: { provider: "nemotron", nemotron: { configured: true }, chrome: { language: "en-US" }, fallbackToChrome: true } });
+  voice.start();
+  await voice.handleTransport({ type: "stt.selected", provider: "chrome", fallback: true });
+  assert.ok(calls.includes("chrome.start"));
+  await voice.handleTransport({ type: "stt_event", event: { type: "stt.error", provider: "nemotron", error: "disconnected" } });
+  assert.equal(calls.filter((value) => value === "chrome.start").length, 2);
+});
+
+test("voice activation emits a wake event and Push-to-Talk takes precedence", () => {
+  const { voice, events, calls, chrome } = controller({ voice: { mode: "voice-activation", wakeWords: ["jarvis"], silenceTimeoutMs: 100 }, stt: { provider: "chrome", chrome: { language: "en-US" } } });
+  voice.arm();
+  chrome.onEvent({ type: "stt.partial", provider: "chrome", text: "Jarvis, check CPU" });
+  assert.deepEqual(events.at(-1), { type: "voice.wake", wake: "jarvis" });
+  voice.start();
+  assert.ok(calls.includes("chrome.stop"));
+});
+
+test("voice activation dispatches one command after its silence timeout", async () => {
+  const timers = [];
+  const { voice, events, chrome } = controller(
+    { voice: { mode: "voice-activation", wakeWords: ["jarvis"], silenceTimeoutMs: 100 }, stt: { provider: "chrome", chrome: { language: "en-US" } } },
+    { setTimer: (fn) => { timers.push(fn); return fn; }, clearTimer: () => {} },
+  );
+  voice.arm();
+  chrome.onEvent({ type: "stt.partial", provider: "chrome", text: "Jarvis check CPU usage" });
+  timers.at(-1)();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(events.at(-1), { type: "voice.command", text: "check cpu usage" });
+});
+
+test("voice state machine accepts known states and protects capture while busy", () => {
+  const machine = new VoiceStateMachine();
+  assert.equal(machine.canCapture(), true);
+  machine.set("thinking"); assert.equal(machine.canCapture(), false);
+  machine.set("approval"); assert.equal(machine.canCapture(), true);
+  assert.throws(() => machine.set("flying"), /Unknown voice state/);
+});

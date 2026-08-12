@@ -1,0 +1,43 @@
+{
+  "jarvis": {
+    "name": "Jarvis"
+  },
+  "execution": {
+    "securityProfile": "sandbox-only",
+    "defaultTarget": "sandbox"
+  },
+  "targets": {
+    "sandbox": {
+      "enabled": true
+    },
+    "local": {
+      "enabled": false,
+      "safeRoots": [
+        "C:/Users/galit/Documents/GitHub"
+      ],
+      "shellEnabled": false
+    }
+  },
+  "hosts": {},
+  "voice": {
+    "mode": "voice-activation",
+    "wakeWords": [
+      "jarvis",
+      "hey jarvis"
+    ],
+    "silenceTimeoutMs": 1400
+  },
+  "stt": {
+    "provider": "auto",
+    "fallbackToChrome": true,
+    "chrome": {
+      "enabled": true,
+      "language": "de-DE"
+    },
+    "nemotron": {
+      "endpoint": null,
+      "language": "auto",
+      "timeoutMs": 5000
+    }
+  }
+}
