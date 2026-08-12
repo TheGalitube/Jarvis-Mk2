@@ -229,6 +229,44 @@ is the persistent Mk2 runtime configuration; it can enable only the intended
 SSH targets. The optional SSH volume is read-only. No `--privileged`, Docker
 socket, or host-root volume is used.
 
+## Linux systemd deployment
+
+For a Raspberry Pi or other Linux server, use the supplied
+`deploy/systemd/jarvis.service` unit with a dedicated `jarvis` account. Keep
+the repository at `/opt/jarvis`, run `codex login` as that account, and create
+the protected environment file from `deploy/systemd/jarvis.env.example`.
+
+```bash
+sudo useradd --create-home --shell /bin/bash jarvis
+sudo install -d -o jarvis -g jarvis /opt/jarvis /etc/jarvis
+# For an existing root-owned checkout on the Pi, migrate it once:
+sudo mv /root/Jarvis-Mk2 /opt/jarvis
+sudo chown -R jarvis:jarvis /opt/jarvis
+# Or clone the repository as the dedicated account into /opt/jarvis.
+sudo -u jarvis npm --prefix /opt/jarvis ci
+sudo cp /opt/jarvis/deploy/systemd/jarvis.service /etc/systemd/system/jarvis.service
+sudo cp /opt/jarvis/deploy/systemd/jarvis.env.example /etc/jarvis/jarvis.env
+sudo chmod 600 /etc/jarvis/jarvis.env
+sudo systemctl daemon-reload
+sudo systemctl enable --now jarvis
+```
+
+Edit `/etc/jarvis/jarvis.env` to add the real, rotated `OPENAI_API_KEY` and
+your MagicDNS name. Verify with `sudo systemctl status jarvis` and follow logs
+with `sudo journalctl -u jarvis -f`.
+
+To deploy an already-pushed Git commit without rebuilding the machine:
+
+```bash
+sudo -u jarvis git -C /opt/jarvis pull --ff-only
+sudo -u jarvis npm --prefix /opt/jarvis ci
+sudo systemctl restart jarvis
+```
+
+`npm ci` is safe to run every update; it only changes installed dependencies
+when `package-lock.json` requires it. `git pull --ff-only` refuses divergent
+server-side edits instead of silently merging them.
+
 ## Personalize it
 
 - `lib/brain.js` → `VOICE`: personality, spoken-response length, and identity.

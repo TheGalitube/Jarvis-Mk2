@@ -1,0 +1,23 @@
+[Unit]
+Description=JARVIS Mk2 voice runtime
+Wants=network-online.target
+After=network-online.target tailscaled.service
+
+[Service]
+Type=simple
+# Create this dedicated account before enabling the unit. Do not run the agent
+# runtime as root.
+User=jarvis
+Group=jarvis
+WorkingDirectory=/opt/jarvis
+Environment=NODE_ENV=production
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+EnvironmentFile=/etc/jarvis/jarvis.env
+ExecStart=/usr/bin/node /opt/jarvis/server.js
+Restart=on-failure
+RestartSec=5s
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
