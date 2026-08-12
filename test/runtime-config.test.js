@@ -1,8 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { loadRuntimeConfig, publicRuntimeConfig } from "../lib/core/config.js";
 
 test("keeps safe voice and STT defaults for a zero-config installation", () => {
@@ -11,6 +12,15 @@ test("keeps safe voice and STT defaults for a zero-config installation", () => {
   assert.equal(config.stt.provider, "chrome");
   assert.equal(config.stt.fallbackToChrome, true);
   assert.equal(config.stt.nemotron.endpoint, null);
+});
+
+test("ships a valid, conservative Linux runtime example", async () => {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const example = JSON.parse(await readFile(join(here, "..", "data", "runtime-config.example.json"), "utf8"));
+  const config = loadRuntimeConfig({ overrides: example });
+  assert.equal(config.execution.securityProfile, "sandbox-only");
+  assert.equal(config.targets.local.enabled, false);
+  assert.deepEqual(config.targets.local.safeRoots, ["/home/jarvis"]);
 });
 
 test("loads voice and Nemotron configuration from a JSON file", async () => {

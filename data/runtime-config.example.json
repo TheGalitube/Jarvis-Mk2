@@ -13,7 +13,7 @@
     "local": {
       "enabled": false,
       "safeRoots": [
-        "C:/Users/galit/Documents/GitHub"
+        "/home/jarvis"
       ],
       "shellEnabled": false
     }

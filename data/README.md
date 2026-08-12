@@ -37,8 +37,26 @@ host, change the security profile to `standard`, set `targets.local.enabled` to
 `true`, and restrict `safeRoots` to folders that JARVIS may access. File writes
 always require a voice approval and never overwrite an existing file. Leave
 `shellEnabled` as `false` unless the high-risk shell operation is intentionally
-required. Say, for example: `Jarvis, create text file /home/jarvis/note.txt with
-content hello`.
+required. A Linux server configuration looks like this:
+
+```json
+"execution": {
+  "securityProfile": "standard",
+  "defaultTarget": "local"
+},
+"targets": {
+  "local": {
+    "enabled": true,
+    "safeRoots": ["/home/jarvis"],
+    "shellEnabled": false
+  }
+}
+```
+
+Use an absolute path in the voice request, for example: `Jarvis, erstelle
+Textdatei /home/jarvis/note.txt mit dem Inhalt Hallo Welt`. Replace
+`/home/jarvis` with a narrower folder where possible; `"/"` grants access to
+the entire filesystem that the `jarvis` service account can write to.
 
 ## SSH targets
 
