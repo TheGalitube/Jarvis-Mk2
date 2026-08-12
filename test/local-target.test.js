@@ -28,6 +28,21 @@ test("lists only real paths below configured safe roots", async () => {
   }
 });
 
+test("creates a new text file only inside configured safe roots", async () => {
+  const root = await mkdtemp(join(tmpdir(), "jarvis-local-write-"));
+  const outside = await mkdtemp(join(tmpdir(), "jarvis-local-outside-"));
+  try {
+    const target = new LocalTarget({ enabled: true, safeRoots: [root] });
+    const result = await target.execute({ operation: "filesystem.write", arguments: { path: join(root, "note.txt"), content: "hello" } });
+    assert.equal(result.bytes, 5);
+    await assert.rejects(target.execute({ operation: "filesystem.write", arguments: { path: join(root, "note.txt"), content: "again" } }), /EEXIST/);
+    await assert.rejects(target.execute({ operation: "filesystem.write", arguments: { path: join(outside, "nope.txt"), content: "no" } }), /outside LocalTarget safe roots/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+    await rm(outside, { recursive: true, force: true });
+  }
+});
+
 test("uses fixed platform adapter commands for process and service status", async () => {
   assert.deepEqual(platformCommand("process.list", "win32"), { command: "tasklist.exe", args: ["/FO", "CSV", "/NH"] });
   assert.deepEqual(platformCommand("process.list", "linux"), { command: "ps", args: ["-axo", "pid=,comm=,rss="] });

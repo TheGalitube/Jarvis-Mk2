@@ -32,10 +32,13 @@ continues as the fallback. The endpoint is never sent to the browser.
 
 ## Local target
 
-To allow structured inspection of the JARVIS host, explicitly change the
-security profile to `standard`, set `targets.local.enabled` to `true`, and
-restrict `safeRoots` to folders that JARVIS may list. Leave `shellEnabled` as
-`false` unless the high-risk shell operation is intentionally required.
+To allow structured inspection and explicit text-file creation on the JARVIS
+host, change the security profile to `standard`, set `targets.local.enabled` to
+`true`, and restrict `safeRoots` to folders that JARVIS may access. File writes
+always require a voice approval and never overwrite an existing file. Leave
+`shellEnabled` as `false` unless the high-risk shell operation is intentionally
+required. Say, for example: `Jarvis, create text file /home/jarvis/note.txt with
+content hello`.
 
 ## SSH targets
 

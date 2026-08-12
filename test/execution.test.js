@@ -76,6 +76,15 @@ test("manager requires approval for high risk operations and denial prevents exe
   assert.equal(available[1].calls.length, 0);
 });
 
+test("manager accepts the voice approval decision string for a high-risk operation", async () => {
+  const config = loadRuntimeConfig({ overrides: { execution: { securityProfile: "standard" }, targets: { local: { enabled: true } } } });
+  const { registry, available, resolver } = setup({ config });
+  const manager = new ExecutionManager({ resolver, registry, policy: new PolicyEngine({ config }) });
+  const result = await manager.execute({ operation: "service.restart", target: "local" }, { requestApproval: async () => "accept" });
+  assert.equal(result.ok, true);
+  assert.equal(available[1].calls.length, 1);
+});
+
 test("sandbox target keeps execution behind its explicitly supplied executor", async () => {
   const target = new SandboxTarget({ execute: async (request) => ({ operation: request.operation }) });
   assert.deepEqual(await target.execute({ operation: "artifact.build" }), { operation: "artifact.build" });

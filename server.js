@@ -20,6 +20,7 @@ import { SSHTarget } from "./lib/execution/ssh-target.js";
 import { defaultOperationRegistry } from "./lib/execution/registry.js";
 import { TargetResolver } from "./lib/execution/resolver.js";
 import { ExecutionManager } from "./lib/execution/manager.js";
+import { parseLocalWriteRequest } from "./lib/execution/local-write-request.js";
 import { PolicyEngine } from "./lib/policy/policy-engine.js";
 import { NemotronStreamingProvider } from "./lib/stt/nemotron.js";
 import { selectSttProvider } from "./lib/stt/provider-selection.js";
@@ -548,6 +549,24 @@ wss.on("connection", (ws) => {
         log(`answer ${primitive.id} ${key}=${JSON.stringify(answer)}`);
         send({ type: "debug", stage: "ask", msg: `${key} = "${answer}"` });
         await advance(send, conv, primitive, { ...params, [key]: answer });
+        return;
+      }
+
+      const localWrite = parseLocalWriteRequest(msg.text);
+      if (localWrite) {
+        send({ type: "state", value: "thinking" });
+        const execution = await executionManager.execute({
+          operation: "filesystem.write",
+          target: "local",
+          arguments: localWrite,
+        }, {
+          requestApproval: async () => {
+            send({ type: "approval", reason: "creating a local file", command: localWrite.path });
+            await say(send, `I am ready to create ${localWrite.path}. Say approve or deny, sir.`, "approval");
+            return await new Promise((resolve) => { conv.approval = { resolve }; });
+          },
+        });
+        await say(send, `Created ${execution.result.path}, sir.`);
         return;
       }
 
