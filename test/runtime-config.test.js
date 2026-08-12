@@ -60,11 +60,12 @@ test("environment values override config values without allowing malformed value
 test("public runtime settings never expose transport or endpoint details", () => {
   const config = loadRuntimeConfig({ overrides: {
     hosts: { minecraft: { type: "ssh", hostname: "10.0.0.30", username: "jarvis", identityFile: "C:/secret/id" } },
-    stt: { provider: "auto", nemotron: { endpoint: "gpu.internal:50051" } },
+    stt: { provider: "auto", nemotron: { endpoint: "gpu.internal:50051" }, whispercpp: { endpoint: "whisper.internal:8080" } },
   } });
   const exposed = publicRuntimeConfig(config);
   assert.equal(exposed.stt.nemotron.configured, true);
   assert.equal(JSON.stringify(exposed).includes("gpu.internal"), false);
+  assert.equal(JSON.stringify(exposed).includes("whisper.internal"), false);
   assert.equal(JSON.stringify(exposed).includes("10.0.0.30"), false);
   assert.equal(JSON.stringify(exposed).includes("C:/secret"), false);
 });

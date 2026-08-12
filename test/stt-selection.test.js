@@ -20,3 +20,13 @@ test("explicit Nemotron also falls back only when configured to do so", async ()
   const noFallback = loadRuntimeConfig({ overrides: { stt: { provider: "nemotron", fallbackToChrome: false, nemotron: { endpoint: "asr.internal:9000" } } } });
   await assert.rejects(selectSttProvider(noFallback, { nemotronHealth: async () => false }), /fallback is disabled/);
 });
+
+test("selects a healthy Whisper.cpp server before Nemotron in auto mode", async () => {
+  const config = loadRuntimeConfig({ overrides: { stt: { provider: "auto", whispercpp: { endpoint: "stt.internal:8080" }, nemotron: { endpoint: "nim.internal:9000" } } } });
+  assert.deepEqual(await selectSttProvider(config, { whisperCppHealth: async () => true, nemotronHealth: async () => true }), { provider: "whispercpp", fallback: false });
+});
+
+test("requires a configured healthy Whisper.cpp server when Chrome fallback is off", async () => {
+  const config = loadRuntimeConfig({ overrides: { stt: { provider: "whispercpp", fallbackToChrome: false, whispercpp: { endpoint: "stt.internal:8080" } } } });
+  await assert.rejects(selectSttProvider(config, { whisperCppHealth: async () => false }), /fallback is disabled/);
+});

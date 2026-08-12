@@ -38,6 +38,11 @@
       "endpoint": null,
       "language": "auto",
       "timeoutMs": 5000
+    },
+    "whispercpp": {
+      "endpoint": null,
+      "language": "de",
+      "timeoutMs": 20000
     }
   }
 }

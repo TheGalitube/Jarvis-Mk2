@@ -23,6 +23,7 @@ import { ExecutionManager } from "./lib/execution/manager.js";
 import { parseLocalWriteRequest } from "./lib/execution/local-write-request.js";
 import { PolicyEngine } from "./lib/policy/policy-engine.js";
 import { NemotronStreamingProvider } from "./lib/stt/nemotron.js";
+import { WhisperCppProvider } from "./lib/stt/whispercpp.js";
 import { selectSttProvider } from "./lib/stt/provider-selection.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -450,21 +451,31 @@ wss.on("connection", (ws) => {
   // builds on the machine, and two tabs are two of these closures.
   const conv = { pending: null, approval: null };
   let nemotron = null;
+  let whispercpp = null;
   let sttRequest = 0;
   const sendSttEvent = (event) => send({ type: "stt_event", event });
   const startStt = async () => {
     const request = ++sttRequest;
     const probe = new NemotronStreamingProvider(runtimeConfig.stt.nemotron);
+    const whisperProbe = new WhisperCppProvider(runtimeConfig.stt.whispercpp);
     let selected;
     try {
-      selected = await selectSttProvider(runtimeConfig, { nemotronHealth: () => probe.health() });
+      selected = await selectSttProvider(runtimeConfig, { nemotronHealth: () => probe.health(), whisperCppHealth: () => whisperProbe.health() });
     } catch {
-      sendSttEvent({ type: "stt.error", provider: "nemotron", error: "provider-unavailable", fatal: false });
+      sendSttEvent({ type: "stt.error", provider: "remote", error: "provider-unavailable", fatal: false });
       return;
     }
     if (request !== sttRequest) return;
     send({ type: "stt.selected", provider: selected.provider, fallback: selected.fallback });
+    if (selected.provider === "whispercpp") {
+      nemotron?.close(); whispercpp?.close();
+      whispercpp = new WhisperCppProvider({ ...runtimeConfig.stt.whispercpp, onEvent: sendSttEvent });
+      try { whispercpp.start(); }
+      catch { sendSttEvent({ type: "stt.error", provider: "whispercpp", error: "connection-failed", fatal: false }); }
+      return;
+    }
     if (selected.provider !== "nemotron") return;
+    whispercpp?.close(); whispercpp = null;
     nemotron?.close();
     nemotron = new NemotronStreamingProvider({
       ...runtimeConfig.stt.nemotron,
@@ -517,13 +528,13 @@ wss.on("connection", (ws) => {
       return;
     }
     if (msg.type === "stt.start") { await startStt(); return; }
-    if (msg.type === "stt.cancel") { sttRequest++; nemotron?.close(); nemotron = null; return; }
+    if (msg.type === "stt.cancel") { sttRequest++; nemotron?.close(); nemotron = null; whispercpp?.close(); whispercpp = null; return; }
     if (msg.type === "stt.audio") {
-      try { nemotron?.appendAudio(msg.audio); }
-      catch { sendSttEvent({ type: "stt.error", provider: "nemotron", error: "audio-rejected", fatal: false }); }
+      try { (nemotron ?? whispercpp)?.appendAudio(msg.audio); }
+      catch { sendSttEvent({ type: "stt.error", provider: nemotron ? "nemotron" : "whispercpp", error: "audio-rejected", fatal: false }); }
       return;
     }
-    if (msg.type === "stt.stop") { nemotron?.stop(); return; }
+    if (msg.type === "stt.stop") { nemotron?.stop(); await whispercpp?.stop(); return; }
     if (msg.type !== "say" || !msg.text?.trim()) return;
     log("say:", JSON.stringify(msg.text));
     send({ type: "debug", stage: "stt", msg: `heard "${msg.text}"` });
@@ -635,7 +646,7 @@ server.listen(PORT, BIND_HOST, () => {
   console.log(`network hosts: ${[...ALLOWED_HOSTS].join(", ")}`);
   console.log(`agent: ${AGENT_MODE}`);
   console.log(`security profile: ${runtimeConfig.execution.securityProfile}`);
-  console.log(`voice: ${runtimeConfig.voice.mode}; stt: ${runtimeConfig.stt.provider}${runtimeConfig.stt.nemotron.endpoint ? " (Nemotron configured)" : ""}`);
+  console.log(`voice: ${runtimeConfig.voice.mode}; stt: ${runtimeConfig.stt.provider}${runtimeConfig.stt.nemotron.endpoint ? " (Nemotron configured)" : ""}${runtimeConfig.stt.whispercpp.endpoint ? " (Whisper.cpp configured)" : ""}`);
   console.log(`targets: sandbox${sandboxTarget.enabled ? "" : " (disabled)"}, local${localTarget.enabled ? "" : " (disabled)"}${sshTargets.length ? `, ssh: ${sshTargets.map((target) => target.id).join(", ")}` : ""}`);
   console.log(`primitives: ${ids.length ? ids.join(", ") : "none"}`);
   console.log(`tts: ${tts.order.length ? tts.order.join(" -> ") : "off (text only)"}`);

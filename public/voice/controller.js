@@ -27,6 +27,10 @@ export class VoiceController {
   // mode. Push-to-Talk remains available and takes ownership when pressed.
   arm() {
     if (!this.voiceActivationEnabled || this.holding || this.activationActive || this.waitingForSelection) return false;
+    if (this.#usesBatchWhisper()) {
+      this.#emit({ type: "stt.error", provider: "whispercpp", error: "push-to-talk-required", fatal: false });
+      return false;
+    }
     this.activationActive = true;
     this.wake.arm();
     return this.#startCapture();
@@ -35,7 +39,7 @@ export class VoiceController {
   async disarm() {
     if (!this.activationActive && !this.waitingForSelection) return false;
     this.activationActive = false; this.wake.disarm(); this.suppressFinal = true;
-    if (this.mode === "nemotron") {
+    if (this.mode !== "chrome" && this.mode !== "pending") {
       await this.microphone.stop();
       this.sendTransport?.({ type: "stt.stop" });
     } else if (this.waitingForSelection) {
@@ -61,7 +65,7 @@ export class VoiceController {
   async stop() {
     if (!this.holding) return false;
     this.holding = false;
-    if (this.mode === "nemotron") {
+    if (this.mode !== "chrome" && this.mode !== "pending") {
       await this.microphone.stop();
       this.sendTransport?.({ type: "stt.stop" });
     } else if (this.waitingForSelection) {
@@ -79,11 +83,11 @@ export class VoiceController {
       if (message.provider === "chrome") return this.chrome.start();
       try {
         await this.microphone.start((audio) => this.sendTransport?.({ type: "stt.audio", audio }));
-      } catch (error) { this.#emit({ type: "stt.error", provider: "nemotron", error: error.message || "microphone-unavailable", fatal: false }); }
+      } catch (error) { this.#emit({ type: "stt.error", provider: message.provider, error: error.message || "microphone-unavailable", fatal: false }); }
       return;
     }
     if (message.type === "stt_event") {
-      if (message.event?.type === "stt.error" && message.event.provider === "nemotron" && (this.holding || this.activationActive) && this.config?.stt?.fallbackToChrome) {
+      if (message.event?.type === "stt.error" && message.event.provider !== "chrome" && (this.holding || this.activationActive) && this.config?.stt?.fallbackToChrome) {
         this.mode = "chrome"; await this.microphone.stop(); this.chrome.start();
       }
       this.#handleProviderEvent(message.event);
@@ -99,11 +103,16 @@ export class VoiceController {
 
   #startCapture() {
     const stt = this.config?.stt;
-    const wantsNemotron = stt?.provider === "nemotron" || (stt?.provider === "auto" && stt?.nemotron?.configured);
-    if (!wantsNemotron) { this.mode = "chrome"; return this.chrome.start(); }
+    const wantsRemote = stt?.provider === "nemotron" || stt?.provider === "whispercpp" || (stt?.provider === "auto" && (stt?.nemotron?.configured || stt?.whispercpp?.configured));
+    if (!wantsRemote) { this.mode = "chrome"; return this.chrome.start(); }
     this.mode = "pending"; this.waitingForSelection = true;
     this.sendTransport?.({ type: "stt.start" });
     return true;
+  }
+
+  #usesBatchWhisper() {
+    const stt = this.config?.stt;
+    return stt?.provider === "whispercpp" || (stt?.provider === "auto" && stt?.whispercpp?.configured);
   }
 
   #handleProviderEvent(event) {

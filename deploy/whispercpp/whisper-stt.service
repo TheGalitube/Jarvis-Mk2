@@ -1,0 +1,18 @@
+[Unit]
+Description=JARVIS Whisper.cpp speech-to-text server
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=admin
+Group=admin
+WorkingDirectory=/opt/whisper.cpp
+ExecStart=/opt/whisper.cpp/build/bin/whisper-server --host 192.168.1.182 --port 8080 --threads 4 --language de --model /opt/whisper.cpp/models/ggml-base.bin --no-timestamps --no-context
+Restart=on-failure
+RestartSec=3s
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

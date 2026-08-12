@@ -34,6 +34,22 @@ test("streams PCM only after server selects configured Nemotron", async () => {
   assert.deepEqual(sent.slice(1), [{ type: "stt.audio", audio: "AAE=" }, { type: "stt.stop" }]);
 });
 
+test("streams PCM to Whisper.cpp after server selection and keeps Chrome off", async () => {
+  const { voice, sent, calls, microphone } = controller({ stt: { provider: "whispercpp", whispercpp: { configured: true }, chrome: { language: "de-DE" }, fallbackToChrome: false } });
+  voice.start();
+  await voice.handleTransport({ type: "stt.selected", provider: "whispercpp" });
+  microphone.onAudio("AAE=");
+  await voice.stop();
+  assert.deepEqual(calls, ["language:de-DE", "mic.start", "mic.stop"]);
+  assert.deepEqual(sent.slice(1), [{ type: "stt.audio", audio: "AAE=" }, { type: "stt.stop" }]);
+});
+
+test("does not arm batch Whisper.cpp for voice activation", () => {
+  const { voice, events } = controller({ voice: { mode: "voice-activation", wakeWords: ["jarvis"], silenceTimeoutMs: 100 }, stt: { provider: "whispercpp", whispercpp: { configured: true }, chrome: { language: "de-DE" } } });
+  assert.equal(voice.arm(), false);
+  assert.deepEqual(events.at(-1), { type: "stt.error", provider: "whispercpp", error: "push-to-talk-required", fatal: false });
+});
+
 test("switches to Chrome when the server selects fallback or Nemotron fails", async () => {
   const { voice, calls } = controller({ stt: { provider: "nemotron", nemotron: { configured: true }, chrome: { language: "en-US" }, fallbackToChrome: true } });
   voice.start();
