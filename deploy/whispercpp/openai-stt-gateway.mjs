@@ -17,6 +17,13 @@ const sessions = new Map();
 
 function send(res, status, body, headers = {}) { res.writeHead(status, { "content-type": "application/json", ...headers }); res.end(body); }
 function safeSession(value) { return typeof value === "string" && /^[a-zA-Z0-9_-]{8,80}$/.test(value) ? value : null; }
+async function localHealth() {
+  // Jarvis probes the configured endpoint with GET /. Keep the gateway's
+  // health result tied to its actual local Whisper.cpp dependency instead of
+  // merely reporting that the Node process has a listening socket.
+  const response = await fetch(new URL("/", localEndpoint), { signal: AbortSignal.timeout(timeoutMs) });
+  return response.ok;
+}
 function audioSeconds(file) {
   if (file.type !== "audio/wav") return null;
   return file.arrayBuffer().then((data) => {
@@ -42,6 +49,10 @@ async function transcribeCloud(form) {
 }
 
 createServer(async (req, res) => {
+  if (req.method === "GET" && req.url?.split("?")[0] === "/") {
+    try { return send(res, (await localHealth()) ? 200 : 503, JSON.stringify({ ok: true, provider: "whispercpp" })); }
+    catch { return send(res, 503, JSON.stringify({ ok: false, provider: "whispercpp" })); }
+  }
   if (req.method !== "POST" || req.url?.split("?")[0] !== "/inference") return send(res, 404, JSON.stringify({ error: "not-found" }));
   const contentType = req.headers["content-type"];
   const size = Number(req.headers["content-length"] || 0);
