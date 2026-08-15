@@ -80,6 +80,30 @@
     font-size: 18px; backdrop-filter: blur(8px);
   }
   #console-toggle:hover { border-color: rgba(79,216,255,.72); color: var(--cyan); }
+  #activity-toggle {
+    position: fixed; top: 16px; left: 18px; z-index: 30;
+    min-height: 38px; padding: 0 13px; border-radius: 999px; border: 1px solid var(--line);
+    color: var(--ink); background: rgba(5,16,25,.74); cursor: pointer;
+    font: 600 11px ui-monospace, monospace; letter-spacing: .12em; text-transform: uppercase;
+    backdrop-filter: blur(8px);
+  }
+  #activity-toggle:hover { border-color: rgba(79,216,255,.72); color: var(--cyan); }
+  #activity-panel {
+    position: fixed; top: 64px; left: 18px; z-index: 29; width: min(360px, calc(100vw - 36px));
+    padding: 16px; border: 1px solid rgba(120,210,240,.28); border-radius: 14px;
+    background: rgba(4,13,21,.94); box-shadow: 0 18px 56px rgba(0,0,0,.42);
+    backdrop-filter: blur(16px); user-select: text;
+  }
+  .activity-head { display:flex; align-items:baseline; justify-content:space-between; gap:12px; }
+  .activity-title { font:600 12px ui-monospace,monospace; letter-spacing:.2em; color:var(--cyan); text-transform:uppercase; }
+  #activity-current { margin:12px 0 10px; font-size:15px; line-height:1.45; color:var(--ink); }
+  #activity-current::before { content:""; display:inline-block; width:7px; height:7px; margin:0 9px 1px 0; border-radius:50%; background:var(--cyan); box-shadow:0 0 12px var(--cyan); }
+  #activity-log { max-height:175px; overflow:auto; border-top:1px solid var(--line); }
+  .activity-entry { padding:8px 0; border-bottom:1px solid rgba(120,200,230,.1); color:var(--muted); font:11px/1.45 ui-monospace,monospace; }
+  .activity-entry time { color:rgba(126,163,181,.7); margin-right:8px; }
+  #preference-status { min-height:1.4em; color:var(--muted); font-size:11px; }
+  .preference-actions { display:flex; gap:8px; flex-wrap:wrap; }
+  .preference-actions button { padding:5px 8px; border-radius:6px; border:1px solid var(--line); color:var(--cyan); background:transparent; font:11px ui-monospace,monospace; cursor:pointer; }
   #runtime-console {
     position: fixed; z-index: 29; top: 64px; right: 18px; width: min(350px, calc(100vw - 36px));
     max-height: calc(100vh - 90px); overflow: auto; padding: 16px;
@@ -114,7 +138,7 @@
   #approval-deny { color: #ff9a8a; background: rgba(255,120,110,.1); }
   .history-entry { padding: 7px 0; border-top: 1px solid rgba(120,200,230,.1); font: 11px/1.4 ui-monospace, monospace; color: var(--muted); }
   .history-entry strong { color: var(--ink); font-weight: 500; }
-  @media (max-width: 600px) { #console-toggle { top: 10px; right: 10px; } #runtime-console { top: 56px; right: 10px; width: calc(100vw - 20px); } }
+  @media (max-width: 600px) { #console-toggle { top: 10px; right: 10px; } #runtime-console { top: 56px; right: 10px; width: calc(100vw - 20px); } #activity-toggle { top:10px; left:10px; } #activity-panel { top:56px; left:10px; width:calc(100vw - 20px); } }
   #mic {
     appearance: none; display: inline-flex; align-items: center; gap: 12px;
     padding: 15px 26px; border-radius: 999px;
@@ -243,12 +267,19 @@
 </head>
 <body>
   <button id="console-toggle" type="button" aria-expanded="false" aria-controls="runtime-console" title="Runtime console">⌘</button>
+  <button id="activity-toggle" type="button" aria-expanded="true" aria-controls="activity-panel">Aktivität</button>
+  <aside id="activity-panel" aria-label="JARVIS Live-Aktivität" aria-live="polite">
+    <div class="activity-head"><span class="activity-title">Live-Aktivität</span><span class="rc-note">Echtzeit</span></div>
+    <div id="activity-current">Bereit für deinen Auftrag.</div>
+    <div id="activity-log"></div>
+  </aside>
   <aside id="runtime-console" class="hidden" aria-label="JARVIS runtime console">
     <div class="rc-head"><span class="rc-title">Runtime console</span><span id="runtime-connection" class="rc-note">connecting</span></div>
     <section class="rc-section"><span class="rc-label">Voice &amp; STT</span><div id="runtime-voice" class="rc-grid"><span>Loading configuration…</span></div></section>
     <section class="rc-section"><div class="rc-section-title"><span class="rc-label">Execution targets</span><select id="target-focus" class="target-select" aria-label="Target health focus" disabled><option>Loading…</option></select></div><div id="runtime-targets" class="rc-empty">Loading targets…</div></section>
     <section id="approval-card" class="rc-section hidden" aria-live="polite"><span class="rc-label">Approval required</span><div id="approval-copy"></div><div class="approval-actions"><button id="approval-accept" type="button">Approve</button><button id="approval-deny" type="button">Deny</button></div></section>
     <section class="rc-section"><span class="rc-label">Execution history</span><div id="execution-history" class="rc-empty">No execution events in this runtime yet.</div></section>
+    <section class="rc-section"><span class="rc-label">Anzeige</span><div class="preference-actions"><button id="toggle-captions" type="button">Untertitel</button><button id="toggle-interface" type="button">Oberfläche</button><button id="toggle-activity" type="button">Aktivität</button></div><div id="preference-status" class="rc-note">Einstellungen werden lokal gespeichert.</div></section>
     <section class="rc-section"><span class="rc-label">Security boundary</span><div class="rc-note">Target inspection is read-only. High-impact actions remain policy- and approval-controlled.</div></section>
   </aside>
   <div id="dbg" class="hidden"></div>

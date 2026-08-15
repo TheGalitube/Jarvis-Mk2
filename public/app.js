@@ -4,6 +4,7 @@ import { ChromeSpeechProvider } from "./stt/chrome-speech-provider.js";
 import { MicrophoneCapture } from "./voice/microphone.js";
 import { VoiceController } from "./voice/controller.js";
 import { VoiceStateMachine } from "./voice/state-machine.js";
+import { loadPreferences, savePreferences } from "./preferences.js";
 
 // ---- DOM ----
 const statusEl = document.getElementById("status");
@@ -23,7 +24,29 @@ const targetFocusEl = document.getElementById("target-focus");
 const approvalCardEl = document.getElementById("approval-card");
 const approvalCopyEl = document.getElementById("approval-copy");
 const executionHistoryEl = document.getElementById("execution-history");
+const activityToggleEl = document.getElementById("activity-toggle");
+const activityPanelEl = document.getElementById("activity-panel");
+const activityCurrentEl = document.getElementById("activity-current");
+const activityLogEl = document.getElementById("activity-log");
+const preferenceStatusEl = document.getElementById("preference-status");
 const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+let preferences = loadPreferences();
+
+function updatePreferenceStatus(saved) {
+  preferenceStatusEl.textContent = saved ? "Gespeichert – bleibt auch nach dem Neuladen erhalten." : "Änderung aktiv, aber der Browser blockiert die lokale Speicherung.";
+}
+function applyPreferences({ announce = false } = {}) {
+  capEl.classList.toggle("hidden", !preferences.captionVisible);
+  document.body.classList.toggle("interface-hidden", !preferences.interfaceVisible);
+  dbgEl.classList.toggle("hidden", !preferences.diagnosticsVisible);
+  activityPanelEl.classList.toggle("hidden", !preferences.activityVisible);
+  runtimeConsoleEl.classList.toggle("hidden", !preferences.consoleOpen);
+  activityToggleEl.setAttribute("aria-expanded", String(preferences.activityVisible));
+  consoleToggleEl.setAttribute("aria-expanded", String(preferences.consoleOpen));
+  buildHud.setChromeHidden(!preferences.interfaceVisible);
+  if (announce) updatePreferenceStatus(savePreferences(preferences));
+}
+function persistPreferences() { applyPreferences({ announce: true }); }
 
 // The build HUD is measured against the real orb element rather than the middle
 // of the window, because the orb is laid out above the caption. #hud is watched
@@ -56,6 +79,17 @@ function cleanProgressLine(line) {
   return String(line ?? "").replace(/[\u0000-\u001f\u007f]/g, "").trim();
 }
 
+const ACTIVITY_MAX = 6;
+function recordActivity(text) {
+  const clean = cleanProgressLine(text);
+  if (!clean) return;
+  activityCurrentEl.textContent = clean;
+  const row = document.createElement("div"); row.className = "activity-entry";
+  const time = document.createElement("time"); time.textContent = new Date().toLocaleTimeString("de-CH", { hour: "2-digit", minute: "2-digit" });
+  row.append(time, document.createTextNode(clean)); activityLogEl.prepend(row);
+  while (activityLogEl.children.length > ACTIVITY_MAX) activityLogEl.lastElementChild.remove();
+}
+
 function renderProgress() {
   if (!progEl) return;
   progEl.textContent = "";
@@ -76,6 +110,7 @@ function pushProgress(line) {
   // The same line, cut into the record around the orb: the HUD is the only place
   // it is visible while a build is running (see build-hud-live in index.html).
   buildHud.event(text);
+  recordActivity(`Aktion läuft: ${text}`);
   dbg(`build: ${text}`);
 }
 
@@ -122,6 +157,8 @@ function setState(nextState) {
   state = voiceState.set(nextState).value;
   voice?.setApprovalMode(nextState === "approval");
   statusEl.textContent = nextState;
+  const stateActivity = { idle: "Bereit für deinen Auftrag.", listening: "Ich höre zu.", thinking: "Auftrag wird verarbeitet.", working: "Aktion läuft.", speaking: "Antwort wird ausgegeben.", approval: "Freigabe wird benötigt." };
+  recordActivity(stateActivity[nextState] || "Status wird aktualisiert.");
   if (nextState === "working") {
     // A new build supersedes the last one's leftover link.
     artifactEl?.classList.add("hidden");
@@ -178,14 +215,11 @@ function openArtifact(url) {
 }
 
 function toggleVisibility(target) {
-  if (target === "caption") capEl.classList.toggle("hidden");
+  if (target === "caption") { preferences.captionVisible = !preferences.captionVisible; persistPreferences(); }
   else if (target === "interface") {
-    document.body.classList.toggle("interface-hidden");
-    // CSS hides the HUD with the rest of the chrome; telling it as well lets it
-    // stop painting into a display:none canvas while the build carries on.
-    buildHud.setChromeHidden(document.body.classList.contains("interface-hidden"));
+    preferences.interfaceVisible = !preferences.interfaceVisible; persistPreferences();
   }
-  else if (target === "diagnostics" && dbgEl) dbgEl.classList.toggle("hidden");
+  else if (target === "diagnostics" && dbgEl) { preferences.diagnosticsVisible = !preferences.diagnosticsVisible; persistPreferences(); }
 }
 
 // ---- Audio (hoisted so the orb loop can read the live analyser) ----
@@ -213,6 +247,7 @@ ws.onerror = () => dbg("ws: error");
 ws.onmessage = async (ev) => {
   let msg; try { msg = JSON.parse(ev.data); } catch { return; }
   if (msg.type === "state") setState(msg.value);
+  else if (msg.type === "activity") recordActivity(msg.text);
   else if (msg.type === "runtime_config") {
     voice.configure(msg.config);
     voice.arm();
@@ -341,9 +376,12 @@ function appendExecutionHistory(entry, prepend = false) {
 }
 
 consoleToggleEl.addEventListener("click", () => {
-  const hidden = runtimeConsoleEl.classList.toggle("hidden");
-  consoleToggleEl.setAttribute("aria-expanded", String(!hidden));
+  preferences.consoleOpen = !preferences.consoleOpen; persistPreferences();
 });
+activityToggleEl.addEventListener("click", () => { preferences.activityVisible = !preferences.activityVisible; persistPreferences(); });
+document.getElementById("toggle-captions").addEventListener("click", () => toggleVisibility("caption"));
+document.getElementById("toggle-interface").addEventListener("click", () => toggleVisibility("interface"));
+document.getElementById("toggle-activity").addEventListener("click", () => { preferences.activityVisible = !preferences.activityVisible; persistPreferences(); });
 targetFocusEl.addEventListener("change", () => {
   if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "target.health", target: targetFocusEl.value }));
 });
@@ -378,7 +416,7 @@ function handleSttEvent(event) {
     ws.send(JSON.stringify({ type: "say", text }));
     return;
   }
-  if (event.type === "stt.started") { listening = true; dbg("stt: started"); return; }
+  if (event.type === "stt.started") { listening = true; recordActivity("Sprache wird verarbeitet."); dbg("stt: started"); return; }
   if (event.type === "stt.resumed") { listening = true; dbg("stt: auto-resumed (still holding)"); return; }
   if (event.type === "stt.partial") {
     setCaption(event.text, "you");
@@ -414,6 +452,7 @@ function handleSttEvent(event) {
 }
 
 if (!voice.supported) handleSttEvent({ type: "stt.unavailable" });
+applyPreferences();
 
 function startListening() {
   if (!voice.supported || voice.holding || !voiceState.canCapture()) return;

@@ -283,6 +283,7 @@ function firstUnanswered(primitive, params) {
 // comes next so the turn is one utterance instead of two. The corrective paths
 // below drop it deliberately -- an acknowledgement contradicts the correction.
 async function dispatchAction(send, conv, action, preamble = "") {
+  send({ type: "activity", text: "Plan wird erstellt." });
   log(`action primitive=${JSON.stringify(action.primitive)} params=${JSON.stringify(action.params)}`);
 
   const primitive = registry.get(action.primitive);
@@ -338,6 +339,7 @@ async function build(send, primitive, params, preamble = "") {
   let started = Date.now();
   let outcome;
   try {
+    send({ type: "activity", text: "Aktion wird gestartet." });
     // Confirm out loud BEFORE the HUD takes over. Someone who just answered a
     // question needs to hear that the answer landed; a silent jump to the build
     // readout reads as the assistant ignoring them. `nextState` hands the orb to
@@ -351,7 +353,7 @@ async function build(send, primitive, params, preamble = "") {
     log(`build start primitive=${primitive.id} params=${JSON.stringify(params)}`);
     const execution = await executionManager.execute({
       operation: "artifact.build",
-      arguments: { primitive, params, onProgress: (line) => send({ type: "progress", line }) },
+      arguments: { primitive, params, onProgress: (line) => { send({ type: "progress", line }); send({ type: "activity", text: `Aktion läuft: ${line}` }); } },
     });
     outcome = execution.result;
   } finally {
@@ -367,6 +369,7 @@ async function build(send, primitive, params, preamble = "") {
   log(`build finish primitive=${primitive.id} ok=${outcome.ok} ${ms}ms dir=${dir}`);
 
   if (outcome.ok) {
+    send({ type: "activity", text: "Aktion erledigt." });
     await say(send, primitive.doneLine(params));
     // Served by the /builds/ route above. Encoded because a primitive's output
     // contract is a filename, and filenames are allowed to contain spaces.
@@ -391,6 +394,7 @@ async function build(send, primitive, params, preamble = "") {
   }) || "The build did not finish.";
 
   await say(send, `${trouble} Nothing is broken, sir. Say the word and I'll try again.`);
+  send({ type: "activity", text: "Aktion konnte nicht abgeschlossen werden." });
   // The log path is the one thing worth reading afterwards, so it goes on screen
   // rather than into the spoken line.
   send({ type: "error", message: outcome.log ? `${trouble} Full log: ${outcome.log}` : trouble });
@@ -537,6 +541,7 @@ wss.on("connection", (ws) => {
     if (msg.type === "stt.stop") { nemotron?.stop(); await whispercpp?.stop(); return; }
     if (msg.type !== "say" || !msg.text?.trim()) return;
     log("say:", JSON.stringify(msg.text));
+    send({ type: "activity", text: "Auftrag wird verstanden." });
     send({ type: "debug", stage: "stt", msg: `heard "${msg.text}"` });
     try {
       if (conv.approval) {
@@ -582,6 +587,7 @@ wss.on("connection", (ws) => {
       }
 
       send({ type: "state", value: "thinking" });
+      send({ type: "activity", text: "Antwort wird vorbereitet." });
       const tb = Date.now();
       const result = agent
         ? await agent.ask(msg.text)
@@ -610,6 +616,7 @@ wss.on("connection", (ws) => {
       log("ERROR:", e.message || e);
       send({ type: "debug", stage: "error", msg: String(e.message || e) });
       send({ type: "error", message: String(e.message || e) });
+      send({ type: "activity", text: "Fehler beim Verarbeiten des Auftrags." });
       send({ type: "state", value: "idle" });
     }
   });
