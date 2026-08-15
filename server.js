@@ -23,6 +23,7 @@ import { TargetResolver } from "./lib/execution/resolver.js";
 import { ExecutionManager } from "./lib/execution/manager.js";
 import { parseLocalWriteRequest } from "./lib/execution/local-write-request.js";
 import { PolicyEngine } from "./lib/policy/policy-engine.js";
+import { approvalPrompt } from "./lib/approval-prompt.js";
 import { NemotronStreamingProvider } from "./lib/stt/nemotron.js";
 import { WhisperCppProvider } from "./lib/stt/whispercpp.js";
 import { OpenAiTranscriptionProvider } from "./lib/stt/openai.js";
@@ -521,7 +522,7 @@ wss.on("connection", (ws) => {
         },
         onApproval: async (request, classification) => {
           const command = request.params?.command || request.params?.reason || classification.reason;
-          const prompt = `Codex needs approval for ${classification.reason}.${command ? ` Command: ${command}.` : ""} Say approve or deny.`;
+          const prompt = approvalPrompt(classification.reason);
           send({ type: "approval", reason: classification.reason, command: command || null });
           // Keep the microphone available after the prompt finishes so the user
           // can answer while Codex remains paused on this approval request.
@@ -606,7 +607,7 @@ wss.on("connection", (ws) => {
         }, {
           requestApproval: async () => {
             send({ type: "approval", reason: "creating a local file", command: localWrite.path });
-            await say(send, `I am ready to create ${localWrite.path}. Say approve or deny, sir.`, "approval");
+            await say(send, approvalPrompt("creating a local file"), "approval");
             return await new Promise((resolve) => { conv.approval = { resolve }; });
           },
         });
