@@ -26,7 +26,7 @@ test("keeps Chrome Push-to-Talk as the default provider", () => {
 test("streams PCM only after server selects configured Nemotron", async () => {
   const { voice, sent, calls, microphone } = controller({ stt: { provider: "auto", nemotron: { configured: true }, chrome: { language: "de-DE" }, fallbackToChrome: true } });
   voice.start();
-  assert.deepEqual(sent, [{ type: "stt.start" }]);
+  assert.deepEqual(sent, [{ type: "stt.start", preferCloud: false }]);
   await voice.handleTransport({ type: "stt.selected", provider: "nemotron" });
   microphone.onAudio("AAE=");
   await voice.stop();
