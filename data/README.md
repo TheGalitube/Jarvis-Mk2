@@ -55,6 +55,32 @@ The standard Whisper.cpp HTTP server is batch-based, so it is deliberately
 used with Push-to-Talk rather than wake-word activation. A failed service is
 shown as an STT error; Chrome is used only if `fallbackToChrome` is `true`.
 
+Final Push-to-Talk transcripts pass through a deterministic technical-dictation
+layer before they are sent to Jarvis. It converts only explicit phrases such as
+`slash home slash test punkt txt` to `/home/test.txt` and `C colon backslash
+Users` to `C:\\Users`; it keeps the raw transcript with the event and never uses
+an AI model to invent missing path components. Execution policy and safe-root
+checks still run after transcription exactly as before.
+
+### large-v3 capacity gate (required)
+
+Do **not** replace the running base model blindly. On the STT host first run the
+included read-only gate:
+
+```bash
+bash /opt/jarvis/deploy/whispercpp/assess-large-v3.sh
+```
+
+It reports current total/available RAM, swap and free disk without downloading,
+restarting, or changing the service. The full `ggml-large-v3.bin` gate is
+conservatively 12 GiB total RAM, 6 GiB currently available RAM and 6 GiB free
+model disk. An 8 GiB DDR3 host will normally be rejected: retain the active base
+model as the safe fallback, or test multilingual `large-v3-q5_0` in a separate
+maintenance window. Quantization costs a little recognition fidelity, but is
+substantially more likely to remain stable on 8 GiB; CPU-only latency can still
+be high. Do not alter the service unit until a test on a separate port has shown
+stable RAM/swap and acceptable German, English code-switching, and path results.
+
 ### Ubuntu STT server setup
 
 On the STT server (`192.168.1.182`), install the CPU version first. It is fully

@@ -44,6 +44,16 @@ test("streams PCM to Whisper.cpp after server selection and keeps Chrome off", a
   assert.deepEqual(sent.slice(1), [{ type: "stt.audio", audio: "AAE=" }, { type: "stt.stop" }]);
 });
 
+test("normalizes only final Push-to-Talk technical dictation and retains the raw transcript", () => {
+  const { voice, events, chrome } = controller({ stt: { provider: "chrome", chrome: { language: "de-DE" } } });
+  voice.start();
+  chrome.onEvent({ type: "stt.partial", provider: "chrome", text: "Öffne slash home" });
+  chrome.onEvent({ type: "stt.final", provider: "chrome", text: "Öffne slash home slash test punkt txt" });
+  assert.equal(events.at(-2).text, "Öffne slash home");
+  assert.equal(events.at(-1).text, "Öffne /home/test.txt");
+  assert.equal(events.at(-1).rawText, "Öffne slash home slash test punkt txt");
+});
+
 test("does not arm batch Whisper.cpp for voice activation", () => {
   const { voice, events } = controller({ voice: { mode: "voice-activation", wakeWords: ["jarvis"], silenceTimeoutMs: 100 }, stt: { provider: "whispercpp", whispercpp: { configured: true }, chrome: { language: "de-DE" } } });
   assert.equal(voice.arm(), false);

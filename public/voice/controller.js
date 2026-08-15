@@ -1,4 +1,5 @@
 import { WakeWordController } from "./wake-word.js";
+import { normalizeTechnicalTranscript } from "../stt/technical-normalizer.js";
 
 // Coordinates Push-to-Talk and voice activation without giving the renderer
 // knowledge of STT provider selection, microphone frames, or wake-word state.
@@ -117,6 +118,13 @@ export class VoiceController {
 
   #handleProviderEvent(event) {
     if (!event) return;
+    // Keep interim captions verbatim. A final Push-to-Talk transcript is the
+    // only value that becomes a command, so normalize it once and retain the
+    // original alongside it for inspection.
+    if (event.type === "stt.final" && typeof event.text === "string") {
+      const normalized = normalizeTechnicalTranscript(event.text);
+      event = { ...event, text: normalized.text, rawText: normalized.rawText, technicalTokens: normalized.technicalTokens };
+    }
     if (this.activationActive) {
       if (event.type === "stt.partial" || event.type === "stt.final") this.wake.observe(event.text, { approval: this.approvalMode });
       if (event.type === "stt.error" || event.type === "stt.unavailable") this.#emit(event);
