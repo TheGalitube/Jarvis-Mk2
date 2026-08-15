@@ -297,9 +297,11 @@ ws.onmessage = async (ev) => {
 };
 
 function renderRuntimeVoice(config) {
-  const voice = config?.voice || {}; const stt = config?.stt || {};
+  // Keep this separate from the module-level VoiceController instance named
+  // `voice`; the checkbox must update that controller, not the config object.
+  const voiceConfig = config?.voice || {}; const stt = config?.stt || {};
   runtimeVoiceEl.textContent = "";
-  const rows = [["Mode", voice.mode || "unknown"], ["Wake words", (voice.wakeWords || []).join(" · ") || "—"], ["Silence", voice.silenceTimeoutMs ? `${voice.silenceTimeoutMs} ms` : "—"], ["STT", stt.provider || "unknown"], ["Fallback", stt.fallbackToChrome ? "Chrome enabled" : "disabled"]];
+  const rows = [["Mode", voiceConfig.mode || "unknown"], ["Wake words", (voiceConfig.wakeWords || []).join(" · ") || "—"], ["Silence", voiceConfig.silenceTimeoutMs ? `${voiceConfig.silenceTimeoutMs} ms` : "—"], ["STT", stt.provider || "unknown"], ["Fallback", stt.fallbackToChrome ? "Chrome enabled" : "disabled"]];
   for (const [label, value] of rows) { const key = document.createElement("span"); const val = document.createElement("strong"); key.textContent = label; val.textContent = value; runtimeVoiceEl.append(key, val); }
   if (stt.gateway?.cloudOptInEnabled) {
     const key = document.createElement("label"); key.textContent = "Cloud STT";
