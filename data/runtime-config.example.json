@@ -43,6 +43,9 @@
       "endpoint": null,
       "language": "de",
       "timeoutMs": 20000
+    },
+    "gateway": {
+      "cloudOptInEnabled": false
     }
   }
 }

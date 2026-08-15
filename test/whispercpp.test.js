@@ -28,6 +28,17 @@ test("uploads a buffered microphone utterance and emits its final text", async (
   assert.equal(events.at(-1).text, "Hallo Welt");
 });
 
+test("uses the LAN gateway cloud hint and reports a local fallback without a secret", async () => {
+  const events = []; let headers;
+  const provider = new WhisperCppProvider({ endpoint: "stt.internal:8081", cloudMode: true, sessionId: "session_123456", onEvent: (event) => events.push(event), fetchImpl: async (_url, options) => {
+    headers = options.headers;
+    return new Response(JSON.stringify({ text: " Hallo " }), { status: 200, headers: { "content-type": "application/json", "x-jarvis-stt-provider": "whispercpp", "x-jarvis-stt-fallback": "quota" } });
+  } });
+  provider.start(); provider.appendAudio("AQACAA=="); await provider.stop();
+  assert.deepEqual(headers, { "X-Jarvis-STT-Mode": "cloud", "X-Jarvis-STT-Session": "session_123456" });
+  assert.deepEqual(events.at(-1), { type: "stt.final", provider: "whispercpp", text: "Hallo", language: "de", fallback: true, fallbackReason: "quota" });
+});
+
 test("reports a failed Whisper.cpp transcription without exposing the endpoint", async () => {
   const events = [];
   const provider = new WhisperCppProvider({ endpoint: "private-stt.internal:8080", onEvent: (event) => events.push(event), fetchImpl: async () => { throw new Error("private-stt.internal unavailable"); } });

@@ -26,7 +26,7 @@ test("keeps Chrome Push-to-Talk as the default provider", () => {
 test("streams PCM only after server selects configured Nemotron", async () => {
   const { voice, sent, calls, microphone } = controller({ stt: { provider: "auto", nemotron: { configured: true }, chrome: { language: "de-DE" }, fallbackToChrome: true } });
   voice.start();
-  assert.deepEqual(sent, [{ type: "stt.start" }]);
+  assert.deepEqual(sent, [{ type: "stt.start", preferCloud: false }]);
   await voice.handleTransport({ type: "stt.selected", provider: "nemotron" });
   microphone.onAudio("AAE=");
   await voice.stop();
@@ -42,6 +42,16 @@ test("streams PCM to Whisper.cpp after server selection and keeps Chrome off", a
   await voice.stop();
   assert.deepEqual(calls, ["language:de-DE", "mic.start", "mic.stop"]);
   assert.deepEqual(sent.slice(1), [{ type: "stt.audio", audio: "AAE=" }, { type: "stt.stop" }]);
+});
+
+test("normalizes only final Push-to-Talk technical dictation and retains the raw transcript", () => {
+  const { voice, events, chrome } = controller({ stt: { provider: "chrome", chrome: { language: "de-DE" } } });
+  voice.start();
+  chrome.onEvent({ type: "stt.partial", provider: "chrome", text: "Öffne slash home" });
+  chrome.onEvent({ type: "stt.final", provider: "chrome", text: "Öffne slash home slash test punkt txt" });
+  assert.equal(events.at(-2).text, "Öffne slash home");
+  assert.equal(events.at(-1).text, "Öffne /home/test.txt");
+  assert.equal(events.at(-1).rawText, "Öffne slash home slash test punkt txt");
 });
 
 test("does not arm batch Whisper.cpp for voice activation", () => {

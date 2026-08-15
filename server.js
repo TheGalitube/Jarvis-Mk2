@@ -2,6 +2,7 @@ import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { basename, dirname, extname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { randomUUID } from "node:crypto";
 import { WebSocketServer } from "ws";
 import { loadTtsConfig } from "./lib/config.js";
 import { ask, buildFullPersona, buildPersona } from "./lib/brain.js";
@@ -454,7 +455,7 @@ wss.on("connection", (ws) => {
   let whispercpp = null;
   let sttRequest = 0;
   const sendSttEvent = (event) => send({ type: "stt_event", event });
-  const startStt = async () => {
+  const startStt = async (preferCloud = false) => {
     const request = ++sttRequest;
     const probe = new NemotronStreamingProvider(runtimeConfig.stt.nemotron);
     const whisperProbe = new WhisperCppProvider(runtimeConfig.stt.whispercpp);
@@ -469,7 +470,7 @@ wss.on("connection", (ws) => {
     send({ type: "stt.selected", provider: selected.provider, fallback: selected.fallback });
     if (selected.provider === "whispercpp") {
       nemotron?.close(); whispercpp?.close();
-      whispercpp = new WhisperCppProvider({ ...runtimeConfig.stt.whispercpp, onEvent: sendSttEvent });
+      whispercpp = new WhisperCppProvider({ ...runtimeConfig.stt.whispercpp, cloudMode: Boolean(preferCloud && runtimeConfig.stt.gateway.cloudOptInEnabled), sessionId: randomUUID(), onEvent: sendSttEvent });
       try { whispercpp.start(); }
       catch { sendSttEvent({ type: "stt.error", provider: "whispercpp", error: "connection-failed", fatal: false }); }
       return;
@@ -527,7 +528,7 @@ wss.on("connection", (ws) => {
       }
       return;
     }
-    if (msg.type === "stt.start") { await startStt(); return; }
+    if (msg.type === "stt.start") { await startStt(msg.preferCloud === true); return; }
     if (msg.type === "stt.cancel") { sttRequest++; nemotron?.close(); nemotron = null; whispercpp?.close(); whispercpp = null; return; }
     if (msg.type === "stt.audio") {
       try { (nemotron ?? whispercpp)?.appendAudio(msg.audio); }
