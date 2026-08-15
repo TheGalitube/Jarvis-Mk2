@@ -118,6 +118,7 @@ let state = "idle"; // idle | listening | thinking | working | speaking | approv
 const voiceState = new VoiceStateMachine(state);
 let level = 0;      // 0..1 smoothed amplitude driving the orb
 let listening = false;
+const CLOUD_STT_STORAGE_KEY = "jarvis.cloud-stt.enabled";
 function setState(nextState) {
   state = voiceState.set(nextState).value;
   voice?.setApprovalMode(nextState === "approval");
@@ -215,6 +216,7 @@ ws.onmessage = async (ev) => {
   if (msg.type === "state") setState(msg.value);
   else if (msg.type === "runtime_config") {
     voice.configure(msg.config);
+    voice.setCloudOptIn(localStorage.getItem(CLOUD_STT_STORAGE_KEY) === "true");
     voice.arm();
     renderRuntimeVoice(msg.config);
   }
@@ -287,6 +289,12 @@ function renderRuntimeVoice(config) {
   runtimeVoiceEl.textContent = "";
   const rows = [["Mode", voice.mode || "unknown"], ["Wake words", (voice.wakeWords || []).join(" · ") || "—"], ["Silence", voice.silenceTimeoutMs ? `${voice.silenceTimeoutMs} ms` : "—"], ["STT", stt.provider || "unknown"], ["Fallback", stt.fallbackToChrome ? "Chrome enabled" : "disabled"]];
   for (const [label, value] of rows) { const key = document.createElement("span"); const val = document.createElement("strong"); key.textContent = label; val.textContent = value; runtimeVoiceEl.append(key, val); }
+  if (stt.gateway?.cloudOptInEnabled) {
+    const key = document.createElement("label"); key.textContent = "Cloud STT";
+    const control = document.createElement("input"); control.type = "checkbox"; control.checked = localStorage.getItem(CLOUD_STT_STORAGE_KEY) === "true";
+    control.addEventListener("change", () => { localStorage.setItem(CLOUD_STT_STORAGE_KEY, String(control.checked)); voice.setCloudOptIn(control.checked); dbg(`stt preference: ${control.checked ? "cloud" : "local"}`); });
+    runtimeVoiceEl.append(key, control);
+  }
 }
 
 function renderRuntimeTargets(targets = []) {
@@ -378,7 +386,7 @@ function handleSttEvent(event) {
     ws.send(JSON.stringify({ type: "say", text }));
     return;
   }
-  if (event.type === "stt.started") { listening = true; dbg("stt: started"); return; }
+  if (event.type === "stt.started") { listening = true; dbg(`stt: ${event.provider === "openai" ? "cloud" : "local"} selected`); return; }
   if (event.type === "stt.resumed") { listening = true; dbg("stt: auto-resumed (still holding)"); return; }
   if (event.type === "stt.partial") {
     setCaption(event.text, "you");

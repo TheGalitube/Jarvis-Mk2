@@ -81,6 +81,42 @@ substantially more likely to remain stable on 8 GiB; CPU-only latency can still
 be high. Do not alter the service unit until a test on a separate port has shown
 stable RAM/swap and acceptable German, English code-switching, and path results.
 
+## Optional Cloud STT through the STT-server gateway
+
+`gpt-4o-transcribe` is used only by `openai-stt-gateway.mjs` on the Linux STT
+server. Jarvis itself continues to upload Push-to-Talk WAV data only to the LAN
+gateway; the browser never receives an API key. The gateway falls back to the
+existing local Whisper.cpp endpoint for missing configuration, timeout, quota,
+duration/session limits, or cloud errors. The existing deterministic path and
+filename normalization runs in Jarvis after either transcription path.
+
+1. On the Jarvis app server, point `stt.whispercpp.endpoint` at the gateway
+   (for example `http://192.168.1.182:8081`) and set
+   `stt.gateway.cloudOptInEnabled` to `true`. It remains off by default.
+2. On the STT server, install the included `jarvis-stt-gateway.service`, then
+   create `/etc/jarvis/stt-gateway.env` with mode `600`, owned by `root:root`:
+
+```bash
+sudo install -d -m 700 /etc/jarvis
+sudoedit /etc/jarvis/stt-gateway.env
+sudo chmod 600 /etc/jarvis/stt-gateway.env
+sudo install -m 644 /opt/jarvis/deploy/whispercpp/jarvis-stt-gateway.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now jarvis-stt-gateway
+```
+
+The EnvironmentFile contains `OPENAI_API_KEY` plus safe defaults from
+`.env.example`: `JARVIS_OPENAI_STT_ENABLED=false`, a 30-second timeout, maximum
+45 seconds audio, and 20 cloud requests per session. Set the cloud flag to true
+only after adding the key. Bind the gateway to the LAN address deliberately and
+firewall it so only Jarvis can reach port 8081; Whisper.cpp itself remains on
+its current local endpoint. The browser Runtime Console exposes a persisted
+per-browser **Cloud STT** checkbox. It sends no secret and must be enabled in
+addition to the server flag.
+
+The same `OPENAI_API_KEY` name is already used by the server-side OpenAI TTS
+configuration. Keep real `.env`/EnvironmentFile secrets out of Git.
+
 ### Ubuntu STT server setup
 
 On the STT server (`192.168.1.182`), install the CPU version first. It is fully

@@ -8,6 +8,7 @@ export class VoiceController {
     this.chrome = chrome; this.microphone = microphone; this.sendTransport = sendTransport; this.onEvent = onEvent;
     this.holding = false; this.mode = "chrome"; this.config = null; this.waitingForSelection = false;
     this.activationActive = false; this.approvalMode = false; this.pendingPushToTalk = false; this.suppressFinal = false;
+    this.cloudOptIn = false;
     this.wake = new WakeWordController({ onEvent: (event) => this.#handleWake(event), setTimer, clearTimer });
     chrome.onEvent = (event) => this.#handleProviderEvent(event);
   }
@@ -23,6 +24,7 @@ export class VoiceController {
   get supported() { return this.chrome.supported; }
   get voiceActivationEnabled() { return this.config?.voice?.mode === "voice-activation"; }
   setApprovalMode(active) { this.approvalMode = Boolean(active); }
+  setCloudOptIn(active) { this.cloudOptIn = Boolean(active) && Boolean(this.config?.stt?.gateway?.cloudOptInEnabled); }
 
   // Starts continuous listening only in the explicitly configured activation
   // mode. Push-to-Talk remains available and takes ownership when pressed.
@@ -104,10 +106,10 @@ export class VoiceController {
 
   #startCapture() {
     const stt = this.config?.stt;
-    const wantsRemote = stt?.provider === "nemotron" || stt?.provider === "whispercpp" || (stt?.provider === "auto" && (stt?.nemotron?.configured || stt?.whispercpp?.configured));
+    const wantsRemote = this.cloudOptIn || stt?.provider === "nemotron" || stt?.provider === "whispercpp" || (stt?.provider === "auto" && (stt?.nemotron?.configured || stt?.whispercpp?.configured));
     if (!wantsRemote) { this.mode = "chrome"; return this.chrome.start(); }
     this.mode = "pending"; this.waitingForSelection = true;
-    this.sendTransport?.({ type: "stt.start" });
+    this.sendTransport?.({ type: "stt.start", preferCloud: this.cloudOptIn });
     return true;
   }
 
