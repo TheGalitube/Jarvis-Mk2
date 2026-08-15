@@ -201,6 +201,7 @@ let timeBins = null;
 // ws:// for local HTTP development.
 const wsProtocol = location.protocol === "https:" ? "wss:" : "ws:";
 const ws = new WebSocket(`${wsProtocol}//${location.host}`);
+const sttModelEl = document.getElementById("stt-model");
 ws.onopen = () => { runtimeConnectionEl.textContent = "connected"; dbg("ws: connected"); };
 ws.onclose = () => {
   runtimeConnectionEl.textContent = "offline";
@@ -295,6 +296,7 @@ function renderRuntimeVoice(config) {
     control.addEventListener("change", () => { localStorage.setItem(CLOUD_STT_STORAGE_KEY, String(control.checked)); voice.setCloudOptIn(control.checked); dbg(`stt preference: ${control.checked ? "cloud" : "local"}`); });
     runtimeVoiceEl.append(key, control);
   }
+  if (sttModelEl && config?.stt?.openai?.model) sttModelEl.value = config.stt.openai.model;
 }
 
 function renderRuntimeTargets(targets = []) {
@@ -354,6 +356,9 @@ consoleToggleEl.addEventListener("click", () => {
 });
 targetFocusEl.addEventListener("change", () => {
   if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "target.health", target: targetFocusEl.value }));
+});
+sttModelEl?.addEventListener("change", () => {
+  if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "stt.model.update", model: sttModelEl.value }));
 });
 document.getElementById("approval-accept").addEventListener("click", () => { ws.send(JSON.stringify({ type: "approval", decision: "approve" })); hideApproval(); });
 document.getElementById("approval-deny").addEventListener("click", () => { ws.send(JSON.stringify({ type: "approval", decision: "deny" })); hideApproval(); });

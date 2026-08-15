@@ -30,8 +30,8 @@ export class VoiceController {
   // mode. Push-to-Talk remains available and takes ownership when pressed.
   arm() {
     if (!this.voiceActivationEnabled || this.holding || this.activationActive || this.waitingForSelection) return false;
-    if (this.#usesBatchWhisper()) {
-      this.#emit({ type: "stt.error", provider: "whispercpp", error: "push-to-talk-required", fatal: false });
+    if (this.#usesBatchProvider()) {
+      this.#emit({ type: "stt.error", provider: this.config?.stt?.provider, error: "push-to-talk-required", fatal: false });
       return false;
     }
     this.activationActive = true;
@@ -106,16 +106,16 @@ export class VoiceController {
 
   #startCapture() {
     const stt = this.config?.stt;
-    const wantsRemote = this.cloudOptIn || stt?.provider === "nemotron" || stt?.provider === "whispercpp" || (stt?.provider === "auto" && (stt?.nemotron?.configured || stt?.whispercpp?.configured));
+    const wantsRemote = this.cloudOptIn || stt?.provider === "openai" || stt?.provider === "nemotron" || stt?.provider === "whispercpp" || (stt?.provider === "auto" && (stt?.nemotron?.configured || stt?.whispercpp?.configured));
     if (!wantsRemote) { this.mode = "chrome"; return this.chrome.start(); }
     this.mode = "pending"; this.waitingForSelection = true;
     this.sendTransport?.({ type: "stt.start", preferCloud: this.cloudOptIn });
     return true;
   }
 
-  #usesBatchWhisper() {
+  #usesBatchProvider() {
     const stt = this.config?.stt;
-    return stt?.provider === "whispercpp" || (stt?.provider === "auto" && stt?.whispercpp?.configured);
+    return stt?.provider === "openai" || stt?.provider === "whispercpp" || (stt?.provider === "auto" && stt?.whispercpp?.configured);
   }
 
   #handleProviderEvent(event) {

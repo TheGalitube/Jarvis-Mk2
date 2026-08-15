@@ -9,7 +9,8 @@ import { loadRuntimeConfig, publicRuntimeConfig } from "../lib/core/config.js";
 test("keeps safe voice and STT defaults for a zero-config installation", () => {
   const config = loadRuntimeConfig();
   assert.deepEqual(config.voice, { mode: "push-to-talk", wakeWords: ["jarvis", "hey jarvis"], silenceTimeoutMs: 1400 });
-  assert.equal(config.stt.provider, "chrome");
+  assert.equal(config.stt.provider, "openai");
+  assert.equal(config.stt.openai.model, "gpt-4o-transcribe");
   assert.equal(config.stt.fallbackToChrome, true);
   assert.equal(config.stt.nemotron.endpoint, null);
 });
@@ -68,4 +69,10 @@ test("public runtime settings never expose transport or endpoint details", () =>
   assert.equal(JSON.stringify(exposed).includes("whisper.internal"), false);
   assert.equal(JSON.stringify(exposed).includes("10.0.0.30"), false);
   assert.equal(JSON.stringify(exposed).includes("C:/secret"), false);
+});
+
+test("allows only the selectable OpenAI transcription models", () => {
+  const config = loadRuntimeConfig({ overrides: { stt: { openai: { model: "whisper-1" } } } });
+  assert.equal(config.stt.openai.model, "whisper-1");
+  assert.throws(() => loadRuntimeConfig({ overrides: { stt: { openai: { model: "other" } } } }), /invalid OpenAI STT/);
 });

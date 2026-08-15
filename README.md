@@ -43,10 +43,10 @@ Host-key verification is left enabled, credentials are referenced rather than
 stored, and current remote capabilities are limited to structured inspection.
 
 Phase 4 provides validated runtime configuration for execution targets, voice
-mode, wake phrases, Chrome language, and optional Nemotron ASR. Defaults remain
-safe: sandbox-only, Push-to-Talk, Chrome STT, no local execution, and no remote
-hosts. See the architecture document for the JSON schema and environment
-overrides.
+mode, wake phrases, Chrome language, OpenAI transcription, and optional
+Nemotron ASR. Defaults remain safe: sandbox-only, Push-to-Talk,
+`gpt-4o-transcribe`, no local execution, and no remote hosts. See the
+architecture document for the JSON schema and environment overrides.
 
 Phase 5 separates Chrome speech recognition from the UI into a normalized STT
 provider and manager. Push-to-Talk remains the default and preserves interim
@@ -71,10 +71,10 @@ root mount, or privileged mode; remote control continues through explicit SSH
 targets only. See [Docker deployment](#docker-deployment).
 
 Phase 10 adds the runtime console (⌘ button): it displays current voice/STT
-configuration, redacted logical target capabilities, explicit health checks,
-approval controls, and the in-memory execution audit trail. It is an
-observability surface: it cannot change security profiles, target configuration,
-or credentials.
+configuration, allows choosing the persisted OpenAI transcription model, and
+shows redacted logical target capabilities, explicit health checks, approval
+controls, and the in-memory execution audit trail. It cannot change security
+profiles, target configuration, or credentials.
 
 ## Requirements
 
