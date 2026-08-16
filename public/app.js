@@ -8,6 +8,8 @@ import { VoiceStateMachine } from "./voice/state-machine.js";
 // ---- DOM ----
 const statusEl = document.getElementById("status");
 const capEl = document.getElementById("caption");
+const transcriptEl = document.getElementById("transcript");
+const transcriptTextEl = document.getElementById("transcript-text");
 const micBtn = document.getElementById("mic");
 const canvas = document.getElementById("orb");
 const ctx = canvas.getContext("2d");
@@ -140,6 +142,13 @@ function setState(nextState) {
   if ((nextState === "idle" || nextState === "approval") && voice?.voiceActivationEnabled) voice.arm();
 }
 function setCaption(text, who) { capEl.textContent = text; capEl.dataset.who = who || ""; }
+function setTranscript(text, state = "final") {
+  const value = String(text ?? "").trim();
+  if (!value || !transcriptEl || !transcriptTextEl) return;
+  transcriptTextEl.textContent = value;
+  transcriptEl.dataset.state = state;
+  transcriptEl.classList.remove("hidden");
+}
 
 // Shows a finished build in a NEW TAB. Navigating this tab instead would tear
 // down the WebSocket, the audio context and the whole conversation, so the app
@@ -373,6 +382,7 @@ function handleSttEvent(event) {
   if (event.type === "voice.command") {
     const text = event.text;
     if (!text) return;
+    setTranscript(event.rawText || text);
     dbg(`voice command → sending "${text}"`);
     noteSpokenTurn(text); setState("thinking");
     ws.send(JSON.stringify({ type: "say", text }));
@@ -381,7 +391,7 @@ function handleSttEvent(event) {
   if (event.type === "stt.started") { listening = true; dbg("stt: started"); return; }
   if (event.type === "stt.resumed") { listening = true; dbg("stt: auto-resumed (still holding)"); return; }
   if (event.type === "stt.partial") {
-    setCaption(event.text, "you");
+    setTranscript(event.text, "live");
     dbg(`stt heard: "${event.text}"`);
     return;
   }
@@ -403,6 +413,7 @@ function handleSttEvent(event) {
   listening = false;
   const text = event.text;
   if (text) {
+    setTranscript(event.rawText || text);
     dbg(`release → sending "${text}"`);
     noteSpokenTurn(text); setState("thinking");
     ws.send(JSON.stringify({ type: "say", text }));

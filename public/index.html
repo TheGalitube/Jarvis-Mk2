@@ -47,6 +47,21 @@
   #caption[data-who="you"]::before    { content: "you   "; color: var(--muted); font-size: .78em; letter-spacing: .12em; }
   #caption[data-who="jarvis"]::before { content: "jarvis   "; color: var(--cyan); opacity: .8; font-size: .78em; letter-spacing: .12em; }
   #caption[data-who="error"] { color: #ff9a8a; }
+  /* The spoken request is independent from Jarvis' reply. Keeping it in its
+     own card means a response never erases the words the person actually said. */
+  #transcript {
+    margin: 12px auto 0; width: min(60ch, 92vw); padding: 10px 13px;
+    border: 1px solid var(--line); border-radius: 9px;
+    background: rgba(8, 25, 38, .46); text-align: left;
+  }
+  #transcript-label {
+    display: block; margin-bottom: 4px; color: var(--muted);
+    font: 600 10px ui-monospace, "SF Mono", Menlo, monospace;
+    letter-spacing: .16em; text-transform: uppercase;
+  }
+  #transcript-text { display: block; color: var(--ink); font-size: 14px; line-height: 1.4; text-wrap: pretty; }
+  #transcript[data-state="live"] { border-color: rgba(79, 216, 255, .46); }
+  #transcript[data-state="live"] #transcript-label { color: var(--cyan); }
 
   /* Live build progress. Left-aligned inside the centred HUD so the lines form a
      tidy column, and inline-block so it takes no room at all when empty. */
@@ -285,6 +300,10 @@
       <div id="hud">
         <div id="status">idle</div>
         <div id="caption"></div>
+        <div id="transcript" class="hidden" data-state="final" aria-live="polite">
+          <span id="transcript-label">Du hast gesagt</span>
+          <span id="transcript-text"></span>
+        </div>
         <div id="progress" class="hidden"></div>
         <a id="artifact" class="hidden" target="_blank" rel="noopener">Open the finished page</a>
       </div>
