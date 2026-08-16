@@ -1,0 +1,19 @@
+[Unit]
+Description=JARVIS local STT gateway (OpenAI opt-in with Whisper.cpp fallback)
+After=network-online.target whisper-stt.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=admin
+Group=admin
+EnvironmentFile=/etc/jarvis/stt-gateway.env
+WorkingDirectory=/opt/jarvis
+ExecStart=/usr/bin/node /opt/jarvis/deploy/whispercpp/openai-stt-gateway.mjs
+Restart=on-failure
+RestartSec=3s
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

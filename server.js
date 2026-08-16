@@ -1,7 +1,8 @@
 import { createServer } from "node:http";
-import { readFile } from "node:fs/promises";
+import { access, readFile, rename, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { randomUUID } from "node:crypto";
 import { WebSocketServer } from "ws";
 import { loadTtsConfig } from "./lib/config.js";
 import { ask, buildFullPersona, buildPersona } from "./lib/brain.js";
@@ -12,7 +13,7 @@ import { describeFailure } from "./lib/outcome.js";
 import { run as runBuild } from "./lib/builder.js";
 import { buildNetworkAccess, getBindHost } from "./lib/network.js";
 import { CodexAppSession } from "./lib/codex-app-server.js";
-import { loadRuntimeConfig, publicRuntimeConfig } from "./lib/core/config.js";
+import { loadRuntimeConfig, OPENAI_STT_MODELS, publicRuntimeConfig } from "./lib/core/config.js";
 import { EventBus } from "./lib/core/events.js";
 import { SandboxTarget } from "./lib/execution/sandbox-target.js";
 import { LocalTarget } from "./lib/execution/local-target.js";
@@ -22,8 +23,10 @@ import { TargetResolver } from "./lib/execution/resolver.js";
 import { ExecutionManager } from "./lib/execution/manager.js";
 import { parseLocalWriteRequest } from "./lib/execution/local-write-request.js";
 import { PolicyEngine } from "./lib/policy/policy-engine.js";
+import { approvalPrompt } from "./lib/approval-prompt.js";
 import { NemotronStreamingProvider } from "./lib/stt/nemotron.js";
 import { WhisperCppProvider } from "./lib/stt/whispercpp.js";
+import { OpenAiTranscriptionProvider } from "./lib/stt/openai.js";
 import { selectSttProvider } from "./lib/stt/provider-selection.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -40,10 +43,27 @@ const { allowedHosts: ALLOWED_HOSTS, allowedOrigins: ALLOWED_ORIGINS } = buildNe
 const BIND_HOST = getBindHost();
 
 const tts = loadTtsConfig();
-const runtimeConfig = loadRuntimeConfig();
+const configuredRuntimeConfigPath = process.env.JARVIS_CONFIG_FILE;
+const defaultRuntimeConfigPath = join(HERE, "data", "runtime-config.json");
+async function existingRuntimeConfigPath() {
+  const path = configuredRuntimeConfigPath || defaultRuntimeConfigPath;
+  try { await access(path); return path; } catch { return configuredRuntimeConfigPath ? path : null; }
+}
+const runtimeConfigPath = await existingRuntimeConfigPath();
+let runtimeConfig = loadRuntimeConfig(runtimeConfigPath ? { path: runtimeConfigPath } : undefined);
 const events = new EventBus();
 const runtimeClients = new Set();
 const executionHistory = [];
+
+async function persistSttModel(model) {
+  if (!OPENAI_STT_MODELS.has(model)) throw new Error("unsupported STT model");
+  runtimeConfig = loadRuntimeConfig({ overrides: { ...runtimeConfig, stt: { ...runtimeConfig.stt, provider: "openai", openai: { ...runtimeConfig.stt.openai, model } } } });
+  const path = runtimeConfigPath || defaultRuntimeConfigPath;
+  const pending = `${path}.tmp`;
+  await writeFile(pending, `${JSON.stringify(runtimeConfig, null, 2)}\n`, "utf8");
+  await rename(pending, path);
+  for (const send of runtimeClients) send({ type: "runtime_config", config: publicRuntimeConfig(runtimeConfig) });
+}
 
 // Phase 1 routes the existing builder through the target abstraction without
 // changing its Codex sandbox. Local and SSH targets are deliberately absent
@@ -452,30 +472,39 @@ wss.on("connection", (ws) => {
   const conv = { pending: null, approval: null };
   let nemotron = null;
   let whispercpp = null;
+  let openai = null;
   let sttRequest = 0;
   const sendSttEvent = (event) => send({ type: "stt_event", event });
-  const startStt = async () => {
+  const startStt = async (preferCloud = false) => {
     const request = ++sttRequest;
     const probe = new NemotronStreamingProvider(runtimeConfig.stt.nemotron);
     const whisperProbe = new WhisperCppProvider(runtimeConfig.stt.whispercpp);
+    const openAiProbe = new OpenAiTranscriptionProvider({ apiKey: process.env.OPENAI_API_KEY, ...runtimeConfig.stt.openai });
     let selected;
     try {
-      selected = await selectSttProvider(runtimeConfig, { nemotronHealth: () => probe.health(), whisperCppHealth: () => whisperProbe.health() });
+      selected = await selectSttProvider(runtimeConfig, { openAiAvailable: openAiProbe.supported, cloudAvailable: openAiProbe.supported, preferCloud, nemotronHealth: () => probe.health(), whisperCppHealth: () => whisperProbe.health() });
     } catch {
       sendSttEvent({ type: "stt.error", provider: "remote", error: "provider-unavailable", fatal: false });
       return;
     }
     if (request !== sttRequest) return;
     send({ type: "stt.selected", provider: selected.provider, fallback: selected.fallback });
+    if (selected.provider === "openai") {
+      nemotron?.close(); whispercpp?.close(); openai?.close();
+      openai = new OpenAiTranscriptionProvider({ apiKey: process.env.OPENAI_API_KEY, ...runtimeConfig.stt.openai, onEvent: sendSttEvent });
+      try { openai.start(); }
+      catch { sendSttEvent({ type: "stt.error", provider: "openai", error: "connection-failed", fatal: false }); }
+      return;
+    }
     if (selected.provider === "whispercpp") {
-      nemotron?.close(); whispercpp?.close();
-      whispercpp = new WhisperCppProvider({ ...runtimeConfig.stt.whispercpp, onEvent: sendSttEvent });
+      nemotron?.close(); whispercpp?.close(); openai?.close(); openai = null;
+      whispercpp = new WhisperCppProvider({ ...runtimeConfig.stt.whispercpp, cloudMode: Boolean(preferCloud && runtimeConfig.stt.gateway.cloudOptInEnabled), sessionId: randomUUID(), onEvent: sendSttEvent });
       try { whispercpp.start(); }
       catch { sendSttEvent({ type: "stt.error", provider: "whispercpp", error: "connection-failed", fatal: false }); }
       return;
     }
     if (selected.provider !== "nemotron") return;
-    whispercpp?.close(); whispercpp = null;
+    whispercpp?.close(); whispercpp = null; openai?.close(); openai = null;
     nemotron?.close();
     nemotron = new NemotronStreamingProvider({
       ...runtimeConfig.stt.nemotron,
@@ -493,7 +522,7 @@ wss.on("connection", (ws) => {
         },
         onApproval: async (request, classification) => {
           const command = request.params?.command || request.params?.reason || classification.reason;
-          const prompt = `Codex needs approval for ${classification.reason}.${command ? ` Command: ${command}.` : ""} Say approve or deny.`;
+          const prompt = approvalPrompt(classification.reason);
           send({ type: "approval", reason: classification.reason, command: command || null });
           // Keep the microphone available after the prompt finishes so the user
           // can answer while Codex remains paused on this approval request.
@@ -527,14 +556,19 @@ wss.on("connection", (ws) => {
       }
       return;
     }
-    if (msg.type === "stt.start") { await startStt(); return; }
-    if (msg.type === "stt.cancel") { sttRequest++; nemotron?.close(); nemotron = null; whispercpp?.close(); whispercpp = null; return; }
-    if (msg.type === "stt.audio") {
-      try { (nemotron ?? whispercpp)?.appendAudio(msg.audio); }
-      catch { sendSttEvent({ type: "stt.error", provider: nemotron ? "nemotron" : "whispercpp", error: "audio-rejected", fatal: false }); }
+    if (msg.type === "stt.model.update") {
+      try { await persistSttModel(msg.model); }
+      catch { send({ type: "stt.model.update", ok: false }); }
       return;
     }
-    if (msg.type === "stt.stop") { nemotron?.stop(); await whispercpp?.stop(); return; }
+    if (msg.type === "stt.start") { await startStt(msg.preferCloud === true); return; }
+    if (msg.type === "stt.cancel") { sttRequest++; nemotron?.close(); nemotron = null; whispercpp?.close(); whispercpp = null; openai?.close(); openai = null; return; }
+    if (msg.type === "stt.audio") {
+      try { (nemotron ?? whispercpp ?? openai)?.appendAudio(msg.audio); }
+      catch { sendSttEvent({ type: "stt.error", provider: nemotron ? "nemotron" : whispercpp ? "whispercpp" : "openai", error: "audio-rejected", fatal: false }); }
+      return;
+    }
+    if (msg.type === "stt.stop") { nemotron?.stop(); await whispercpp?.stop(); await openai?.stop(); return; }
     if (msg.type !== "say" || !msg.text?.trim()) return;
     log("say:", JSON.stringify(msg.text));
     send({ type: "debug", stage: "stt", msg: `heard "${msg.text}"` });
@@ -573,7 +607,7 @@ wss.on("connection", (ws) => {
         }, {
           requestApproval: async () => {
             send({ type: "approval", reason: "creating a local file", command: localWrite.path });
-            await say(send, `I am ready to create ${localWrite.path}. Say approve or deny, sir.`, "approval");
+            await say(send, approvalPrompt("creating a local file"), "approval");
             return await new Promise((resolve) => { conv.approval = { resolve }; });
           },
         });
@@ -618,7 +652,7 @@ wss.on("connection", (ws) => {
     sessions.delete(ws);
     if (conv.approval) conv.approval.resolve("cancel");
     agent?.close();
-    sttRequest++; nemotron?.close();
+    sttRequest++; nemotron?.close(); whispercpp?.close(); openai?.close();
     conv.pending = null;
     // A build already running is left to finish: it has been paid for and its
     // artifact still lands on disk. Nothing here points back at this socket

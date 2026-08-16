@@ -4,6 +4,7 @@ import { ChromeSpeechProvider } from "./stt/chrome-speech-provider.js";
 import { MicrophoneCapture } from "./voice/microphone.js";
 import { VoiceController } from "./voice/controller.js";
 import { VoiceStateMachine } from "./voice/state-machine.js";
+import { AudioQueue } from "./audio-queue.js";
 
 // ---- DOM ----
 const statusEl = document.getElementById("status");
@@ -120,6 +121,7 @@ let state = "idle"; // idle | listening | thinking | working | speaking | approv
 const voiceState = new VoiceStateMachine(state);
 let level = 0;      // 0..1 smoothed amplitude driving the orb
 let listening = false;
+const CLOUD_STT_STORAGE_KEY = "jarvis.cloud-stt.enabled";
 function setState(nextState) {
   state = voiceState.set(nextState).value;
   voice?.setApprovalMode(nextState === "approval");
@@ -202,6 +204,7 @@ let audioCtx;
 let analyser = null;
 let freqBins = null;
 let timeBins = null;
+const audioQueue = new AudioQueue();
 
 // ---- WebSocket ----
 // A page served over HTTPS may only open a secure WebSocket. Tailscale Serve
@@ -209,6 +212,7 @@ let timeBins = null;
 // ws:// for local HTTP development.
 const wsProtocol = location.protocol === "https:" ? "wss:" : "ws:";
 const ws = new WebSocket(`${wsProtocol}//${location.host}`);
+const sttModelEl = document.getElementById("stt-model");
 ws.onopen = () => { runtimeConnectionEl.textContent = "connected"; dbg("ws: connected"); };
 ws.onclose = () => {
   runtimeConnectionEl.textContent = "offline";
@@ -224,6 +228,7 @@ ws.onmessage = async (ev) => {
   if (msg.type === "state") setState(msg.value);
   else if (msg.type === "runtime_config") {
     voice.configure(msg.config);
+    voice.setCloudOptIn(localStorage.getItem(CLOUD_STT_STORAGE_KEY) === "true");
     voice.arm();
     renderRuntimeVoice(msg.config);
   }
@@ -278,7 +283,7 @@ ws.onmessage = async (ev) => {
   else if (msg.type === "audio") {
     dbg(`audio: ~${Math.round((msg.data.length * 3) / 4 / 1024)}kb received`);
     try {
-      await playAudio(msg.data, msg.nextState);
+      await audioQueue.enqueue(() => playAudio(msg.data, msg.nextState));
     } catch (e) {
       setCaption("⚠ audio: " + (e.message || e), "error");
       dbg(`audio decode failed: ${e.message || e}`);
@@ -296,6 +301,13 @@ function renderRuntimeVoice(config) {
   runtimeVoiceEl.textContent = "";
   const rows = [["Mode", voice.mode || "unknown"], ["Wake words", (voice.wakeWords || []).join(" · ") || "—"], ["Silence", voice.silenceTimeoutMs ? `${voice.silenceTimeoutMs} ms` : "—"], ["STT", stt.provider || "unknown"], ["Fallback", stt.fallbackToChrome ? "Chrome enabled" : "disabled"]];
   for (const [label, value] of rows) { const key = document.createElement("span"); const val = document.createElement("strong"); key.textContent = label; val.textContent = value; runtimeVoiceEl.append(key, val); }
+  if (stt.gateway?.cloudOptInEnabled) {
+    const key = document.createElement("label"); key.textContent = "Cloud STT";
+    const control = document.createElement("input"); control.type = "checkbox"; control.checked = localStorage.getItem(CLOUD_STT_STORAGE_KEY) === "true";
+    control.addEventListener("change", () => { localStorage.setItem(CLOUD_STT_STORAGE_KEY, String(control.checked)); voice.setCloudOptIn(control.checked); dbg(`stt preference: ${control.checked ? "cloud" : "local"}`); });
+    runtimeVoiceEl.append(key, control);
+  }
+  if (sttModelEl && config?.stt?.openai?.model) sttModelEl.value = config.stt.openai.model;
 }
 
 function renderRuntimeTargets(targets = []) {
@@ -356,6 +368,9 @@ consoleToggleEl.addEventListener("click", () => {
 targetFocusEl.addEventListener("change", () => {
   if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "target.health", target: targetFocusEl.value }));
 });
+sttModelEl?.addEventListener("change", () => {
+  if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "stt.model.update", model: sttModelEl.value }));
+});
 document.getElementById("approval-accept").addEventListener("click", () => { ws.send(JSON.stringify({ type: "approval", decision: "approve" })); hideApproval(); });
 document.getElementById("approval-deny").addEventListener("click", () => { ws.send(JSON.stringify({ type: "approval", decision: "deny" })); hideApproval(); });
 
@@ -388,7 +403,7 @@ function handleSttEvent(event) {
     ws.send(JSON.stringify({ type: "say", text }));
     return;
   }
-  if (event.type === "stt.started") { listening = true; dbg("stt: started"); return; }
+  if (event.type === "stt.started") { listening = true; dbg(`stt: ${event.provider === "openai" ? "cloud" : "local"} selected`); return; }
   if (event.type === "stt.resumed") { listening = true; dbg("stt: auto-resumed (still holding)"); return; }
   if (event.type === "stt.partial") {
     setTranscript(event.text, "live");
@@ -474,16 +489,19 @@ async function playAudio(b64, nextState) {
   timeBins = new Uint8Array(an.fftSize);
   setState("speaking");
   dbg(`playing ${buf.duration.toFixed(1)}s`);
-  src.onended = () => {
-    analyser = null;
-    level = 0;
-    dbg("playback ended");
-    // A clip can hand the orb to a state instead of ending the turn: the build
-    // confirmation lands in "working" so the HUD picks up exactly when the voice
-    // stops. Anything without a handoff returns to idle as usual.
-    setState(nextState || "idle");
-  };
-  src.start();
+  await new Promise((resolve) => {
+    src.onended = () => {
+      analyser = null;
+      level = 0;
+      dbg("playback ended");
+      // A clip can hand the orb to a state instead of ending the turn: the build
+      // confirmation lands in "working" so the HUD picks up exactly when the voice
+      // stops. Anything without a handoff returns to idle as usual.
+      setState(nextState || "idle");
+      resolve();
+    };
+    src.start();
+  });
 }
 
 // ---- Orb ----

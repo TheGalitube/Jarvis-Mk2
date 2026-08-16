@@ -110,6 +110,9 @@
   .rc-label { display: block; margin-bottom: 8px; font: 600 10px ui-monospace, monospace; letter-spacing: .16em; color: var(--muted); text-transform: uppercase; }
   .rc-grid { display: grid; grid-template-columns: 1fr auto; gap: 7px 12px; font-size: 13px; }
   .rc-grid strong { font-weight: 500; color: var(--ink); text-align: right; }
+  .rc-setting { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 10px; margin-top: 12px; font-size: 12px; color: var(--muted); }
+  .rc-setting select { max-width: 190px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; color: var(--ink); background: #07131d; font: 11px ui-monospace, monospace; }
+  .rc-setting + .rc-note { margin-top: 7px; }
   .target-card { padding: 10px 0; border-top: 1px solid rgba(120,200,230,.11); }
   .target-card:first-child { border-top: 0; }
   .target-top { display: flex; align-items: center; gap: 8px; }
@@ -260,7 +263,7 @@
   <button id="console-toggle" type="button" aria-expanded="false" aria-controls="runtime-console" title="Runtime console">⌘</button>
   <aside id="runtime-console" class="hidden" aria-label="JARVIS runtime console">
     <div class="rc-head"><span class="rc-title">Runtime console</span><span id="runtime-connection" class="rc-note">connecting</span></div>
-    <section class="rc-section"><span class="rc-label">Voice &amp; STT</span><div id="runtime-voice" class="rc-grid"><span>Loading configuration…</span></div></section>
+    <section class="rc-section"><span class="rc-label">Voice &amp; STT</span><div id="runtime-voice" class="rc-grid"><span>Loading configuration…</span></div><label class="rc-setting" for="stt-model"><span>OpenAI Transkriptionsmodell</span><select id="stt-model" aria-label="OpenAI Transkriptionsmodell"><option value="gpt-4o-transcribe">gpt-4o-transcribe</option><option value="whisper-1">whisper-1</option></select></label><div class="rc-note">Die Auswahl wird gespeichert und gilt ab dem nächsten Push-to-Talk-Transkript. <code>whisper-1</code> wird nach dem Loslassen verarbeitet.</div></section>
     <section class="rc-section"><div class="rc-section-title"><span class="rc-label">Execution targets</span><select id="target-focus" class="target-select" aria-label="Target health focus" disabled><option>Loading…</option></select></div><div id="runtime-targets" class="rc-empty">Loading targets…</div></section>
     <section id="approval-card" class="rc-section hidden" aria-live="polite"><span class="rc-label">Approval required</span><div id="approval-copy"></div><div class="approval-actions"><button id="approval-accept" type="button">Approve</button><button id="approval-deny" type="button">Deny</button></div></section>
     <section class="rc-section"><span class="rc-label">Execution history</span><div id="execution-history" class="rc-empty">No execution events in this runtime yet.</div></section>
