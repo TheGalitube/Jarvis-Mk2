@@ -47,6 +47,8 @@ test("full agent persona is not limited to registered build primitives", () => {
   const persona = brain.buildFullPersona();
   assert.match(persona, /full Codex agent/);
   assert.match(persona, /arbitrary requests/);
+  assert.match(persona, /Never claim an authentication, DNS, or internet failure/);
+  assert.match(persona, /sandbox needs approval/);
   assert.doesNotMatch(persona, /You have no builds installed/);
 });
 
