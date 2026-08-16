@@ -4,6 +4,7 @@ import { ChromeSpeechProvider } from "./stt/chrome-speech-provider.js";
 import { MicrophoneCapture } from "./voice/microphone.js";
 import { VoiceController } from "./voice/controller.js";
 import { VoiceStateMachine } from "./voice/state-machine.js";
+import { AudioQueue } from "./audio-queue.js";
 
 // ---- DOM ----
 const statusEl = document.getElementById("status");
@@ -194,6 +195,7 @@ let audioCtx;
 let analyser = null;
 let freqBins = null;
 let timeBins = null;
+const audioQueue = new AudioQueue();
 
 // ---- WebSocket ----
 // A page served over HTTPS may only open a secure WebSocket. Tailscale Serve
@@ -272,7 +274,7 @@ ws.onmessage = async (ev) => {
   else if (msg.type === "audio") {
     dbg(`audio: ~${Math.round((msg.data.length * 3) / 4 / 1024)}kb received`);
     try {
-      await playAudio(msg.data, msg.nextState);
+      await audioQueue.enqueue(() => playAudio(msg.data, msg.nextState));
     } catch (e) {
       setCaption("⚠ audio: " + (e.message || e), "error");
       dbg(`audio decode failed: ${e.message || e}`);
@@ -476,16 +478,19 @@ async function playAudio(b64, nextState) {
   timeBins = new Uint8Array(an.fftSize);
   setState("speaking");
   dbg(`playing ${buf.duration.toFixed(1)}s`);
-  src.onended = () => {
-    analyser = null;
-    level = 0;
-    dbg("playback ended");
-    // A clip can hand the orb to a state instead of ending the turn: the build
-    // confirmation lands in "working" so the HUD picks up exactly when the voice
-    // stops. Anything without a handoff returns to idle as usual.
-    setState(nextState || "idle");
-  };
-  src.start();
+  await new Promise((resolve) => {
+    src.onended = () => {
+      analyser = null;
+      level = 0;
+      dbg("playback ended");
+      // A clip can hand the orb to a state instead of ending the turn: the build
+      // confirmation lands in "working" so the HUD picks up exactly when the voice
+      // stops. Anything without a handoff returns to idle as usual.
+      setState(nextState || "idle");
+      resolve();
+    };
+    src.start();
+  });
 }
 
 // ---- Orb ----
