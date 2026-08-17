@@ -263,7 +263,7 @@
   <button id="console-toggle" type="button" aria-expanded="false" aria-controls="runtime-console" title="Runtime console">⌘</button>
   <aside id="runtime-console" class="hidden" aria-label="JARVIS runtime console">
     <div class="rc-head"><span class="rc-title">Runtime console</span><span id="runtime-connection" class="rc-note">connecting</span></div>
-    <section class="rc-section"><span class="rc-label">Voice &amp; STT</span><div id="runtime-voice" class="rc-grid"><span>Loading configuration…</span></div><label class="rc-setting" for="stt-model"><span>OpenAI Transkriptionsmodell</span><select id="stt-model" aria-label="OpenAI Transkriptionsmodell"><option value="gpt-4o-transcribe">gpt-4o-transcribe</option><option value="whisper-1">whisper-1</option></select></label><div class="rc-note">Die Auswahl wird gespeichert und gilt ab dem nächsten Push-to-Talk-Transkript. <code>whisper-1</code> wird nach dem Loslassen verarbeitet.</div></section>
+    <section class="rc-section"><span class="rc-label">Voice &amp; STT</span><div id="runtime-voice" class="rc-grid"><span>Loading configuration…</span></div><label class="rc-setting" for="stt-model"><span>OpenAI transcription model</span><select id="stt-model" aria-label="OpenAI transcription model"><option value="gpt-4o-transcribe">gpt-4o-transcribe</option><option value="whisper-1">whisper-1</option></select></label><div class="rc-note">Your selection is saved and takes effect with the next push-to-talk transcript. <code>whisper-1</code> is processed after you release the button.</div></section>
     <section class="rc-section"><div class="rc-section-title"><span class="rc-label">Execution targets</span><select id="target-focus" class="target-select" aria-label="Target health focus" disabled><option>Loading…</option></select></div><div id="runtime-targets" class="rc-empty">Loading targets…</div></section>
     <section id="approval-card" class="rc-section hidden" aria-live="polite"><span class="rc-label">Approval required</span><div id="approval-copy"></div><div class="approval-actions"><button id="approval-accept" type="button">Approve</button><button id="approval-deny" type="button">Deny</button></div></section>
     <section class="rc-section"><span class="rc-label">Execution history</span><div id="execution-history" class="rc-empty">No execution events in this runtime yet.</div></section>
@@ -304,7 +304,7 @@
         <div id="status">idle</div>
         <div id="caption"></div>
         <div id="transcript" class="hidden" data-state="final" aria-live="polite">
-          <span id="transcript-label">Du hast gesagt</span>
+          <span id="transcript-label">You said</span>
           <span id="transcript-text"></span>
         </div>
         <div id="progress" class="hidden"></div>
