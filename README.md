@@ -178,6 +178,15 @@ The persistent runtime configuration is normally stored in `/opt/jarvis/data/run
 
 Environment settings such as `OPENAI_API_KEY`, server binding, Codex home, GitHub home, and TTS settings belong in `/etc/jarvis/jarvis.env`. Use [deploy/systemd/jarvis.env.example](deploy/systemd/jarvis.env.example) as a minimal reference, never as a place to store a real key.
 
+## Telegram (optional)
+
+JARVIS can also receive Telegram text and voice messages. Set
+`JARVIS_TELEGRAM_BOT_TOKEN` and a comma-separated
+`JARVIS_TELEGRAM_ALLOWED_CHAT_IDS` in the protected service environment file;
+the bot will ignore every other chat. See [INSTALL.md](INSTALL.md) for the
+setup steps. Telegram voice notes use the configured OpenAI transcription model
+and replies are returned as text.
+
 ## Development
 
 Requirements:

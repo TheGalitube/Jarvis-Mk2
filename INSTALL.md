@@ -204,6 +204,11 @@ OPENAI_TTS_MODEL=gpt-4o-mini-tts
 OPENAI_TTS_VOICE=cedar
 OPENAI_TTS_FORMAT=mp3
 OPENAI_TTS_INSTRUCTIONS=Speak calmly, precisely, and confidently in German.
+
+# Optional: Telegram text and voice interface. The token comes from @BotFather.
+# Restrict the bot to your own numeric Telegram chat ID.
+JARVIS_TELEGRAM_BOT_TOKEN=replace-with-your-bot-token
+JARVIS_TELEGRAM_ALLOWED_CHAT_IDS=replace-with-your-numeric-chat-id
 ```
 
 Protect the file. It must not be readable by the `jarvis` account or other users:
@@ -212,6 +217,20 @@ Protect the file. It must not be readable by the `jarvis` account or other users
 chown root:root /etc/jarvis/jarvis.env
 chmod 600 /etc/jarvis/jarvis.env
 ```
+
+### Telegram Bot einrichten (optional)
+
+1. Open `@BotFather` in Telegram, run `/newbot`, and copy the bot token into
+   `JARVIS_TELEGRAM_BOT_TOKEN` in `/etc/jarvis/jarvis.env`.
+2. Send `/start` to your new bot. To obtain your numeric chat ID, write to
+   `@userinfobot` in Telegram and copy the displayed ID.
+3. Put that number in `JARVIS_TELEGRAM_ALLOWED_CHAT_IDS`, restart JARVIS, and
+   send the bot a text or voice message.
+
+JARVIS uses Telegram long polling, so no public webhook, domain, or open port
+is needed. Messages from every other chat are ignored. Telegram voice notes are
+transcribed with the configured OpenAI speech-to-text model before being sent to
+Jarvis; replies are returned as Telegram text.
 
 ## 8. Allow Codex network access for the trusted project
 
