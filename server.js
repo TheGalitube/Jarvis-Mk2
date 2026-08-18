@@ -26,8 +26,9 @@ import { PolicyEngine } from "./lib/policy/policy-engine.js";
 import { approvalPrompt } from "./lib/approval-prompt.js";
 import { NemotronStreamingProvider } from "./lib/stt/nemotron.js";
 import { WhisperCppProvider } from "./lib/stt/whispercpp.js";
-import { OpenAiTranscriptionProvider } from "./lib/stt/openai.js";
+import { OpenAiTranscriptionProvider, transcribeAudioFile } from "./lib/stt/openai.js";
 import { selectSttProvider } from "./lib/stt/provider-selection.js";
+import { TelegramBot, telegramConfig } from "./lib/telegram.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PUBLIC = join(HERE, "public");
@@ -110,6 +111,7 @@ function publicTargets() {
 // here also turns a typo in someone's brand-new primitive into a startup error
 // naming the file, rather than a silence in the middle of a conversation.
 const registry = await loadRegistry();
+const log = (...a) => console.log(new Date().toISOString(), ...a);
 
 // The assistant can only ask for a build it has been told exists, so the persona
 // is derived from the registry that was just loaded rather than written by hand.
@@ -117,10 +119,41 @@ const registry = await loadRegistry();
 // every build request, which looks like a broken model rather than a miswiring.
 const persona = buildPersona(registry);
 const fullPersona = buildFullPersona();
+const telegramSessions = new Map();
+
+// Telegram never receives the interactive browser approval flow. Its own
+// conversations run read-only via `ask`, preserving the same protection even
+// if a forwarded prompt tries to request a machine-changing operation.
+async function telegramTurn(bot, chatId, text) {
+  await bot.sendTyping(chatId);
+  const result = await ask(text, telegramSessions.get(chatId), { persona: fullPersona });
+  telegramSessions.set(chatId, result.sessionId);
+  const { reply } = parseAction(result.reply);
+  await bot.sendMessage(chatId, reply);
+}
+
+const telegramSettings = telegramConfig();
+const telegram = telegramSettings.enabled
+  ? new TelegramBot({
+      ...telegramSettings,
+      log,
+      onText: ({ chatId, text }) => telegramTurn(telegram, chatId, text),
+      onVoice: async ({ chatId, fileId }) => {
+        await telegram.sendTyping(chatId);
+        try {
+          const audio = await telegram.downloadVoice(fileId);
+          const transcript = await transcribeAudioFile({ apiKey: process.env.OPENAI_API_KEY, ...runtimeConfig.stt.openai, audio });
+          if (!transcript) { await telegram.sendMessage(chatId, "Ich konnte das leider nicht verstehen, sir."); return; }
+          await telegramTurn(telegram, chatId, transcript);
+        } catch (error) {
+          log(`telegram voice failed: ${error.message}`);
+          await telegram.sendMessage(chatId, "Die Sprachnachricht konnte leider nicht verarbeitet werden, sir.");
+        }
+      },
+    })
+  : null;
 
 const MIME = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css" };
-
-const log = (...a) => console.log(new Date().toISOString(), ...a);
 
 // ---------------------------------------------------------------------------
 // Static files
@@ -684,4 +717,8 @@ server.listen(PORT, BIND_HOST, () => {
   console.log(`targets: sandbox${sandboxTarget.enabled ? "" : " (disabled)"}, local${localTarget.enabled ? "" : " (disabled)"}${sshTargets.length ? `, ssh: ${sshTargets.map((target) => target.id).join(", ")}` : ""}`);
   console.log(`primitives: ${ids.length ? ids.join(", ") : "none"}`);
   console.log(`tts: ${tts.order.length ? tts.order.join(" -> ") : "off (text only)"}`);
+  if (telegram) {
+    console.log(`telegram: enabled for ${telegramSettings.allowedChatIds.length} allowed chat${telegramSettings.allowedChatIds.length === 1 ? "" : "s"}`);
+    telegram.start().catch((error) => log(`telegram stopped: ${error.message}`));
+  } else console.log("telegram: off");
 });
