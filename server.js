@@ -119,15 +119,36 @@ const log = (...a) => console.log(new Date().toISOString(), ...a);
 // every build request, which looks like a broken model rather than a miswiring.
 const persona = buildPersona(registry);
 const fullPersona = buildFullPersona();
-const telegramSessions = new Map();
+const telegramAgents = new Map();
 
-// Telegram never receives the interactive browser approval flow. Its own
-// conversations run read-only via `ask`, preserving the same protection even
-// if a forwarded prompt tries to request a machine-changing operation.
+function telegramApprovalDecision(text) {
+  const normalized = String(text ?? "").trim().toLowerCase();
+  if (/^(approve|approved|yes|ja|freigeben|genehmigen)\b/.test(normalized)) return "accept";
+  if (/^(deny|denied|no|nein|ablehnen|verweigern)\b/.test(normalized)) return "decline";
+  return null;
+}
+
+function telegramAgent(bot, chatId) {
+  let agent = telegramAgents.get(chatId);
+  if (agent) return agent;
+  agent = new CodexAppSession({
+    cwd: HERE,
+    persona: fullPersona,
+    onApproval: async (request, classification) => {
+      const command = request.params?.command || request.params?.reason || null;
+      await bot.sendMessage(chatId, `${approvalPrompt(classification.reason)} Reply approve or deny.${command ? ` Command: ${command}` : ""}`);
+      return await new Promise((resolve) => { agent.telegramApproval = { resolve }; });
+    },
+  });
+  telegramAgents.set(chatId, agent);
+  return agent;
+}
+
+// Telegram uses the same full Codex agent as the browser. Critical actions
+// remain paused until the allowed Telegram chat explicitly approves them.
 async function telegramTurn(bot, chatId, text) {
   await bot.sendTyping(chatId);
-  const result = await ask(text, telegramSessions.get(chatId), { persona: fullPersona });
-  telegramSessions.set(chatId, result.sessionId);
+  const result = await telegramAgent(bot, chatId).ask(text);
   const { reply } = parseAction(result.reply);
   await bot.sendMessage(chatId, reply);
 }
@@ -138,6 +159,15 @@ const telegram = telegramSettings.enabled
       ...telegramSettings,
       log,
       onText: ({ chatId, text }) => telegramTurn(telegram, chatId, text),
+      onApprovalText: ({ chatId, text }) => {
+        const agent = telegramAgents.get(chatId);
+        const decision = telegramApprovalDecision(text);
+        if (!agent?.telegramApproval || !decision) return false;
+        const { resolve } = agent.telegramApproval;
+        agent.telegramApproval = null;
+        resolve(decision);
+        return true;
+      },
       onVoice: async ({ chatId, fileId }) => {
         await telegram.sendTyping(chatId);
         try {
