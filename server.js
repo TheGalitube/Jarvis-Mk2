@@ -29,6 +29,8 @@ import { WhisperCppProvider } from "./lib/stt/whispercpp.js";
 import { OpenAiTranscriptionProvider, transcribeAudioFile } from "./lib/stt/openai.js";
 import { selectSttProvider } from "./lib/stt/provider-selection.js";
 import { TelegramBot, telegramConfig } from "./lib/telegram.js";
+import { MemoryStore } from "./lib/memory.js";
+import { agentProgress } from "./lib/agent-progress.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PUBLIC = join(HERE, "public");
@@ -64,6 +66,18 @@ async function persistSttModel(model) {
   await writeFile(pending, `${JSON.stringify(runtimeConfig, null, 2)}\n`, "utf8");
   await rename(pending, path);
   for (const send of runtimeClients) send({ type: "runtime_config", config: publicRuntimeConfig(runtimeConfig) });
+}
+
+async function persistAutonomyMode(autonomyMode) {
+  if (!["supervised", "autonomous"].includes(autonomyMode)) throw new Error("unsupported autonomy mode");
+  runtimeConfig = loadRuntimeConfig({ overrides: { ...runtimeConfig, agent: { ...runtimeConfig.agent, autonomyMode } } });
+  const path = runtimeConfigPath || defaultRuntimeConfigPath;
+  const pending = `${path}.tmp`;
+  await writeFile(pending, `${JSON.stringify(runtimeConfig, null, 2)}\n`, "utf8");
+  await rename(pending, path);
+  for (const send of runtimeClients) send({ type: "runtime_config", config: publicRuntimeConfig(runtimeConfig) });
+  for (const agent of telegramAgents.values()) agent.close();
+  telegramAgents.clear();
 }
 
 // Phase 1 routes the existing builder through the target abstraction without
@@ -120,10 +134,11 @@ const log = (...a) => console.log(new Date().toISOString(), ...a);
 const persona = buildPersona(registry);
 const fullPersona = buildFullPersona();
 const telegramAgents = new Map();
+const memory = await new MemoryStore(join(HERE, "data", "memory.json")).load();
 
 function telegramApprovalDecision(text) {
   const normalized = String(text ?? "").trim().toLowerCase();
-  if (/^(approve|approved|yes|ja|freigeben|genehmigen)\b/.test(normalized)) return "accept";
+  if (/^(approve|approved|aprove|aproved|approv|yes|ja|freigeben|genehmigen)\b/.test(normalized)) return "accept";
   if (/^(deny|denied|no|nein|ablehnen|verweigern)\b/.test(normalized)) return "decline";
   return null;
 }
@@ -134,6 +149,14 @@ function telegramAgent(bot, chatId) {
   agent = new CodexAppSession({
     cwd: HERE,
     persona: fullPersona,
+    // Telegram always uses Jarvis's full agent, so it has the same filesystem
+    // reach as the browser full-agent session.
+    fullAccess: true,
+    autonomyMode: runtimeConfig.agent.autonomyMode,
+    onEvent: (event) => {
+      const line = event.type === "event" ? agentProgress(event.event) : null;
+      if (line) void bot.sendMessage(chatId, `Status: ${line}`);
+    },
     onApproval: async (request, classification) => {
       const command = request.params?.command || request.params?.reason || null;
       await bot.sendMessage(chatId, `${approvalPrompt(classification.reason)} Reply approve or deny.${command ? ` Command: ${command}` : ""}`);
@@ -148,8 +171,10 @@ function telegramAgent(bot, chatId) {
 // remain paused until the allowed Telegram chat explicitly approves them.
 async function telegramTurn(bot, chatId, text) {
   await bot.sendTyping(chatId);
-  const result = await telegramAgent(bot, chatId).ask(text);
+  await bot.sendMessage(chatId, "Bin dabei, sir. Ich starte die Aufgabe und halte Sie über die Schritte auf dem Laufenden.");
+  const result = await telegramAgent(bot, chatId).ask(`${memory.context(`telegram:${chatId}`)}\n\nAKTUELLE NACHRICHT:\n${text}`);
   const { reply } = parseAction(result.reply);
+  await memory.remember(`telegram:${chatId}`, text, reply);
   await bot.sendMessage(chatId, reply);
 }
 
@@ -158,7 +183,23 @@ const telegram = telegramSettings.enabled
   ? new TelegramBot({
       ...telegramSettings,
       log,
-      onText: ({ chatId, text }) => telegramTurn(telegram, chatId, text),
+      onText: async ({ chatId, text }) => {
+        const command = text.trim().toLowerCase();
+        if (/^\/(?:autonomy|autonom)(?:\s|$)/.test(command)) {
+          const requested = /\b(on|an|enable|aktiv)\b/.test(command) ? "autonomous"
+            : /\b(off|aus|disable|inaktiv)\b/.test(command) ? "supervised" : null;
+          if (requested) {
+            await persistAutonomyMode(requested);
+            await telegram.sendMessage(chatId, requested === "autonomous"
+              ? "Autonomer Modus ist aktiv, sir. Normale Arbeit, GitHub-Commits und Pushes laufen nun ohne Einzelbestätigung; destruktive oder privilegierte Aktionen bleiben geschützt."
+              : "Überwachter Modus ist aktiv, sir. Externe und kritische Aktionen benötigen wieder Ihre Freigabe.");
+          } else {
+            await telegram.sendMessage(chatId, `Autonomie: ${runtimeConfig.agent.autonomyMode === "autonomous" ? "aktiv" : "überwacht"}. Nutzen Sie /autonomy on oder /autonomy off.`);
+          }
+          return;
+        }
+        await telegramTurn(telegram, chatId, text);
+      },
       onApprovalText: ({ chatId, text }) => {
         const agent = telegramAgents.get(chatId);
         const decision = telegramApprovalDecision(text);
@@ -517,7 +558,7 @@ const sessions = new Map(); // ws -> sessionId
 
 function approvalDecision(text) {
   const value = String(text ?? "").trim().toLowerCase();
-  if (/^(yes|ja|approve|approved|allow|erlauben|bestätigen|bestatigen|go|mach)\b/.test(value)) return "accept";
+  if (/^(yes|ja|approve|approved|aprove|aproved|approv|allow|erlauben|bestätigen|bestatigen|go|mach)\b/.test(value)) return "accept";
   if (/^(no|nein|deny|denied|decline|ablehnen|stop|stopp|abbrechen)\b/.test(value)) return "decline";
   return null;
 }
@@ -576,12 +617,20 @@ wss.on("connection", (ws) => {
     try { await nemotron.start(); }
     catch { sendSttEvent({ type: "stt.error", provider: "nemotron", error: "connection-failed", fatal: false }); }
   };
-  const agent = AGENT_MODE === "full"
-    ? new CodexAppSession({
+  let agent = null;
+  const getAgent = () => {
+    if (agent) return agent;
+    agent = new CodexAppSession({
         cwd: HERE,
         persona: fullPersona,
+        // "full" must describe real execution capability, not only a richer
+        // prompt. Approval policy remains a separate owner preference.
+        fullAccess: AGENT_MODE === "full",
+        autonomyMode: runtimeConfig.agent.autonomyMode,
         onEvent: (event) => {
           if (event.type === "usage") send({ type: "usage", usage: event.usage });
+          const line = event.type === "event" ? agentProgress(event.event) : null;
+          if (line) send({ type: "progress", line });
         },
         onApproval: async (request, classification) => {
           const command = request.params?.command || request.params?.reason || classification.reason;
@@ -594,8 +643,9 @@ wss.on("connection", (ws) => {
             conv.approval = { resolve };
           });
         },
-      })
-    : null;
+      });
+    return agent;
+  };
   log("client connected");
   ws.on("message", async (raw) => {
     let msg; try { msg = JSON.parse(raw); } catch { return; }
@@ -622,6 +672,14 @@ wss.on("connection", (ws) => {
     if (msg.type === "stt.model.update") {
       try { await persistSttModel(msg.model); }
       catch { send({ type: "stt.model.update", ok: false }); }
+      return;
+    }
+    if (msg.type === "agent.autonomy.update") {
+      try {
+        await persistAutonomyMode(msg.mode);
+        agent?.close(); agent = null;
+        send({ type: "agent.autonomy.update", ok: true, mode: runtimeConfig.agent.autonomyMode });
+      } catch { send({ type: "agent.autonomy.update", ok: false }); }
       return;
     }
     if (msg.type === "stt.start") { await startStt(msg.preferCloud === true); return; }
@@ -680,15 +738,19 @@ wss.on("connection", (ws) => {
 
       send({ type: "state", value: "thinking" });
       const tb = Date.now();
-      const result = agent
-        ? await agent.ask(msg.text)
-        : await ask(msg.text, sessions.get(ws), { persona });
+      const memoryKey = "browser";
+      const contextualText = `${memory.context(memoryKey)}\n\nAKTUELLE NACHRICHT:\n${msg.text}`;
+      const activeAgent = AGENT_MODE === "full" ? getAgent() : null;
+      const result = activeAgent
+        ? await activeAgent.ask(contextualText)
+        : await ask(contextualText, sessions.get(ws), { persona });
       const { reply: spoken, sessionId } = result;
       const bms = Date.now() - tb;
       if (!agent) sessions.set(ws, sessionId);
       // The model may append a machine-readable tag asking for a build. Split it
       // off first: the tag is for dispatch, never for the voice.
       const { reply, action } = parseAction(spoken);
+      await memory.remember(memoryKey, msg.text, reply);
       log(`brain ok ${bms}ms session=${sessionId} reply=${JSON.stringify(reply)}` +
           (action ? ` action=${JSON.stringify(action.primitive)}` : ""));
       send({ type: "debug", stage: "brain", ms: bms, msg: `codex: "${reply}"` });
@@ -696,7 +758,7 @@ wss.on("connection", (ws) => {
       // handed down as a preamble and fused onto the question (or the kickoff)
       // so the whole turn is one utterance. Speaking it here would add a second
       // clip and a synthesis gap to every build request.
-      if (action && !agent) {
+      if (action && !activeAgent) {
         await dispatchAction(send, conv, action, reply);
       } else if (reply) {
         await say(send, reply);

@@ -2,6 +2,9 @@
   "jarvis": {
     "name": "Jarvis"
   },
+  "agent": {
+    "autonomyMode": "supervised"
+  },
   "execution": {
     "securityProfile": "sandbox-only",
     "defaultTarget": "sandbox"

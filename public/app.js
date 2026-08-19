@@ -26,6 +26,8 @@ const targetFocusEl = document.getElementById("target-focus");
 const approvalCardEl = document.getElementById("approval-card");
 const approvalCopyEl = document.getElementById("approval-copy");
 const executionHistoryEl = document.getElementById("execution-history");
+const autonomyEl = document.getElementById("agent-autonomy");
+const autonomyCopyEl = document.getElementById("agent-autonomy-copy");
 const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 // The build HUD is measured against the real orb element rather than the middle
@@ -231,6 +233,7 @@ ws.onmessage = async (ev) => {
     voice.setCloudOptIn(localStorage.getItem(CLOUD_STT_STORAGE_KEY) === "true");
     voice.arm();
     renderRuntimeVoice(msg.config);
+    renderAgentAutonomy(msg.config);
   }
   else if (msg.type === "runtime_targets") renderRuntimeTargets(msg.targets);
   else if (msg.type === "target.health") updateTargetHealth(msg);
@@ -311,6 +314,18 @@ function renderRuntimeVoice(config) {
   }
   if (sttModelEl && config?.stt?.openai?.model) sttModelEl.value = config.stt.openai.model;
 }
+
+function renderAgentAutonomy(config) {
+  const autonomous = config?.agent?.autonomyMode === "autonomous";
+  if (autonomyEl) autonomyEl.checked = autonomous;
+  if (autonomyCopyEl) autonomyCopyEl.textContent = autonomous ? "Autonomous mode — full access" : "Supervised mode";
+}
+
+autonomyEl?.addEventListener("change", () => {
+  if (ws.readyState !== WebSocket.OPEN) { autonomyEl.checked = !autonomyEl.checked; return; }
+  ws.send(JSON.stringify({ type: "agent.autonomy.update", mode: autonomyEl.checked ? "autonomous" : "supervised" }));
+  dbg(`autonomy: ${autonomyEl.checked ? "enabled" : "disabled"}`);
+});
 
 function renderRuntimeTargets(targets = []) {
   runtimeTargetsEl.textContent = "";

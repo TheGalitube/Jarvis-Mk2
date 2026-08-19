@@ -4,6 +4,9 @@ node_modules/
 builds/
 .env
 data/runtime-config.json
+data/runtime-config.json.backup-*
+data/memory.json
+Projects/
 deploy/systemd/jarvis.env
 .gstack/
 .worktrees/

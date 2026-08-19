@@ -121,7 +121,7 @@ These are separate credentials:
 
 Create OpenAI API keys at [platform.openai.com/api-keys](https://platform.openai.com/api-keys). Never commit a key, put it in browser code, or paste it into an issue, screenshot, or log.
 
-## GitHub access and network sandbox
+## GitHub access, network, and Full Agent access
 
 If JARVIS should use GitHub, log in as the service account:
 
@@ -132,7 +132,12 @@ gh auth status
 exit
 ```
 
-Codex's workspace sandbox also needs network access. In `/home/jarvis/.codex/config.toml`:
+`JARVIS_AGENT_MODE=full` starts Codex with `danger-full-access`, so the agent
+can work outside the project workspace. It has the permissions of the Linux
+service user (`jarvis` by default), not magical root access. GitHub and other
+network work need normal connectivity for that service user.
+
+The following workspace-sandbox setting remains useful for legacy builds:
 
 ```toml
 [projects."/opt/jarvis"]
@@ -142,7 +147,9 @@ trust_level = "trusted"
 network_access = true
 ```
 
-This is separate from the JARVIS `local` target setting. Verify the actual service user's connectivity before diagnosing DNS:
+This is separate from the JARVIS `local` target setting and does not control
+Full Agent filesystem access. Verify the actual service user's connectivity
+before diagnosing DNS:
 
 ```bash
 runuser -u jarvis -- getent ahostsv4 github.com
@@ -187,6 +194,35 @@ the bot will ignore every other chat. See [INSTALL.md](INSTALL.md) for the
 setup steps. Telegram voice notes use the configured OpenAI transcription model
 and replies are returned as text.
 
+JARVIS keeps a small persistent project and conversation ledger in
+`data/memory.json` (excluded from Git). It restores project context after a
+restart and contains only user-provided project details and recent conversation
+text — never tokens or credentials. Ask “Welche Projekte sind offen?” or
+“Woran arbeitest du?” for a context-aware status; Jarvis still verifies actual
+repository progress before presenting it as fact. Telegram approvals also
+accept the common typo `aprove`.
+
+### Autonomer Agent-Modus
+
+Im Runtime-Console des Web-UI gibt es einen **Autonomous mode**-Schalter. Er
+wird in `data/runtime-config.json` gespeichert und gilt nach dem nächsten
+Auftrag auch für Telegram. `JARVIS_AGENT_MODE=full` gibt dem Full-Agent bereits
+vollständigen lokalen Zugriff; dieser Schalter erlaubt zusätzlich normale
+Netzwerk-, GitHub-, Commit- und Push-Aktionen ohne Einzelbestätigung. Jarvis
+meldet seine Arbeitsschritte live im Web-UI und
+als Statusnachrichten in Telegram. Aktionen mit schwer rückgängig zu machenden
+Folgen — insbesondere Repository-Löschung, Force-Push, rekursives Löschen und
+privilegierte Systembefehle — bleiben bestätigungspflichtig.
+
+In Telegram lassen sich die Einstellungen ausschließlich aus einem erlaubten
+Chat steuern:
+
+```text
+/autonomy on
+/autonomy off
+/autonomy status
+```
+
 ## Development
 
 Requirements:
@@ -209,7 +245,7 @@ The test suite is local and does not call Codex, OpenAI, GitHub, or another netw
 |---|---|
 | `Missing optional dependency @openai/codex-linux-x64` | Reinstall Codex with `npm install -g @openai/codex@latest --include=optional`; see [INSTALL.md](INSTALL.md). |
 | `gh auth status` reports no configuration | Run it as `jarvis`, and verify `HOME` and `GH_CONFIG_DIR` in `/etc/jarvis/jarvis.env`. |
-| JARVIS reports GitHub DNS failure but `getent` works | Enable `[sandbox_workspace_write] network_access = true` in the service user's Codex config and restart JARVIS. |
+| JARVIS reports GitHub DNS failure but `getent` works | Restart JARVIS after checking the service user's GitHub login and network. For legacy workspace builds, enable `[sandbox_workspace_write] network_access = true`. |
 | OpenAI STT fails | Check API billing, project limits, `OPENAI_API_KEY`, and `journalctl -u jarvis -n 100 --no-pager`. Never print the key. |
 | Browser cannot open JARVIS | Use the SSH tunnel above and visit `http://localhost:3210`; keep port 3210 private. |
 | No transcript appears | Complete a push-to-talk request by releasing the button; `whisper-1` returns after the audio upload completes. |

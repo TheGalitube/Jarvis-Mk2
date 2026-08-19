@@ -267,7 +267,7 @@
     <section class="rc-section"><div class="rc-section-title"><span class="rc-label">Execution targets</span><select id="target-focus" class="target-select" aria-label="Target health focus" disabled><option>Loading…</option></select></div><div id="runtime-targets" class="rc-empty">Loading targets…</div></section>
     <section id="approval-card" class="rc-section hidden" aria-live="polite"><span class="rc-label">Approval required</span><div id="approval-copy"></div><div class="approval-actions"><button id="approval-accept" type="button">Approve</button><button id="approval-deny" type="button">Deny</button></div></section>
     <section class="rc-section"><span class="rc-label">Execution history</span><div id="execution-history" class="rc-empty">No execution events in this runtime yet.</div></section>
-    <section class="rc-section"><span class="rc-label">Security boundary</span><div class="rc-note">Target inspection is read-only. High-impact actions remain policy- and approval-controlled.</div></section>
+    <section class="rc-section"><span class="rc-label">Agent autonomy</span><label class="rc-setting" for="agent-autonomy"><span id="agent-autonomy-copy">Supervised mode</span><input id="agent-autonomy" type="checkbox" aria-label="Enable autonomous agent mode"></label><div class="rc-note">Autonomous mode gives Jarvis full local access and lets normal work, commits and pushes continue without individual approvals. Deleting repositories, force pushes and privileged/destructive commands still ask first.</div></section>
   </aside>
   <div id="dbg" class="hidden"></div>
   <div id="build-hud" class="hidden" aria-hidden="true">

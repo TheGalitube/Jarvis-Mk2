@@ -232,9 +232,22 @@ is needed. Messages from every other chat are ignored. Telegram voice notes are
 transcribed with the configured OpenAI speech-to-text model before being sent to
 Jarvis; replies are returned as Telegram text.
 
-## 8. Allow Codex network access for the trusted project
+The bot accepts `approve` and the common typo `aprove` as approvals. Project
+context and recent conversations are stored locally in
+`/opt/jarvis/data/memory.json`; this file is intentionally excluded from Git.
 
-The `local` execution target and Codex's own sandbox are separate settings. GitHub and the OpenAI API require network access from Codex's workspace sandbox.
+## 8. Codex network access and Full Agent mode
+
+The `local` execution target and Codex's own sandbox are separate settings.
+With `JARVIS_AGENT_MODE=full`, JARVIS starts Codex with
+`danger-full-access`: it can work outside `/opt/jarvis` and access every path
+that the Linux service user `jarvis` is allowed to access. This does not bypass
+Linux ownership or permissions; run the service as a deliberately privileged
+account only if that is truly intended.
+
+GitHub and other network work require normal network connectivity for the
+service user. The workspace-sandbox setting below remains useful for legacy
+builds, but it is not what grants Full Agent filesystem access.
 
 ```bash
 install -d -o jarvis -g jarvis /home/jarvis/.codex
@@ -264,7 +277,13 @@ chown jarvis:jarvis /home/jarvis/.codex/config.toml
 chmod 600 /home/jarvis/.codex/config.toml
 ```
 
-This grants network access to Codex's workspace sandbox. It does not automatically approve actions; JARVIS should still ask for approval before external or consequential operations.
+This grants network access to Codex's workspace sandbox for legacy build work.
+For Full Agent sessions, filesystem access comes from `JARVIS_AGENT_MODE=full`.
+Use the **Autonomous mode** toggle in the web Runtime Console, or Telegram
+commands `/autonomy on`, `/autonomy off`, and `/autonomy status`, to choose
+whether routine GitHub/network actions require individual approval. Repository
+deletion, force-pushes, recursive deletion, and privileged commands always
+remain confirmation points.
 
 ## 9. Install and start the systemd service
 
@@ -349,7 +368,9 @@ runuser -u jarvis -- getent ahostsv4 github.com
 runuser -u jarvis -- gh api user --jq .login
 ```
 
-If both work, the server network and GitHub login are healthy. Check `/home/jarvis/.codex/config.toml` for `[sandbox_workspace_write] network_access = true`, then restart JARVIS.
+If both work, the server network and GitHub login are healthy. In Full Agent
+mode, restart JARVIS after changing its environment or Codex configuration. For
+legacy workspace builds, also check `[sandbox_workspace_write] network_access = true`.
 
 ### `gh auth status` says no configuration file
 

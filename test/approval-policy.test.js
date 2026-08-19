@@ -10,10 +10,18 @@ test("automatically approves ordinary local commands", () => {
   assert.equal(result.level, "automatic");
 });
 
-test("always requires approval for GitHub and remote Git actions", () => {
+test("requires approval for GitHub and remote Git actions in supervised mode", () => {
   for (const command of ["gh repo create demo", "git push origin main", "git clone https://github.com/example/demo"]) {
     assert.equal(classifyApproval({ params: { command } }).level, "critical", command);
   }
+});
+
+test("autonomous mode permits ordinary GitHub work but protects destructive commands", () => {
+  assert.equal(classifyApproval({ params: { command: "git push origin main" } }, process.env, { autonomyMode: "autonomous" }).level, "automatic");
+  for (const command of ["gh repo delete demo", "git push --force origin main", "rm -rf /tmp/demo", "sudo systemctl restart jarvis"]) {
+    assert.equal(classifyApproval({ params: { command } }, process.env, { autonomyMode: "autonomous" }).level, "critical", command);
+  }
+  assert.equal(classifyApproval({ method: "item/permissions/requestApproval", params: { reason: "privilege escalation" } }, process.env, { autonomyMode: "autonomous" }).level, "critical");
 });
 
 test("requires approval for extra write roots and supports custom patterns", () => {
